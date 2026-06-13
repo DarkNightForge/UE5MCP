@@ -1,0 +1,20 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1.0",
+	"FriendlyName": "UE5MCP",
+	"Description": "Governed AI-agent tools for the Unreal Editor over MCP: typed, policy-checked, human-approved, undoable actions with a full audit log. The plugin never runs model-generated code.",
+	"Category": "Editor",
+	"CreatedBy": "Eashan Babber",
+	"EnabledByDefault": false,
+	"CanContainContent": false,
+	"IsBetaVersion": true,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "UE5MCP",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		}
+	]
+}

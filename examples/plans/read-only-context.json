@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "summary": "Read the current Unreal Editor selection and world context",
+  "requires_approval": false,
+  "requires_second_confirmation": false,
+  "actions": [
+    {
+      "id": "get-selection-context-01",
+      "tool": "get_selection_context",
+      "risk": "read_only",
+      "targets": [],
+      "params": {
+        "max_objects": 200
+      }
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "summary": "INVALID on purpose: a requires-targets mutation with no targets must be rejected (rule R6)",
+  "requires_approval": true,
+  "requires_second_confirmation": false,
+  "context_fingerprint": {
+    "scene": "/Temp/Untitled_1.Untitled_1",
+    "selected_object_paths": []
+  },
+  "actions": [
+    {
+      "id": "set-actor-folder-nothing-01",
+      "tool": "set_actor_folder",
+      "risk": "low_risk",
+      "targets": [],
+      "params": {
+        "folder_path": "UE5MCP/Organized"
+      }
+    }
+  ]
+}

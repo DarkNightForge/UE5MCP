@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "ue5mcp": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "Plugins/UE5MCP/MCPServer/ue5mcp-server.mjs"
+      ],
+      "env": {
+        "UE5MCP_BRIDGE": "http://127.0.0.1:30110",
+        "UE5MCP_ELICIT": "auto"
+      }
+    }
+  }
+}

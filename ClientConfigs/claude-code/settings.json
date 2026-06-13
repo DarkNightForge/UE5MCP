@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__ue5mcp__get_selection",
+      "mcp__ue5mcp__find_actors",
+      "mcp__ue5mcp__preview_actions"
+    ],
+    "ask": [
+      "mcp__ue5mcp__delete_actor"
+    ]
+  }
+}

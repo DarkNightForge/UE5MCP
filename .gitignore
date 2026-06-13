@@ -1,11 +1,33 @@
-# Build artifacts
+# ── Unreal build artifacts ───────────────────────────────────────────────
+Binaries/
+Intermediate/
+Saved/
+DerivedDataCache/
+*.VC.db
+*.opensdf
+*.sdf
+*.sln
+*.xcodeproj
+*.xcworkspace
+.vs/
+
+# ── Agent / assistant local artifacts ────────────────────────────────────
+# NOTE: these were previously kept only in this machine's global git excludes.
+# They are re-declared here because this repo is public + contributor-facing:
+# per-machine global excludes do NOT travel with clones, so without these a
+# collaborator could commit agent artifacts. Do not remove.
+.hermes/
+.agent-cache/
+**/.claude/settings.local.json
+
+# ── Build artifacts (generic) ────────────────────────────────────────────
 build/
 dist/
 out/
 bin/
 obj/
 
-# Large/generated assets and local exports
+# ── Large/generated assets and local exports ─────────────────────────────
 *.zip
 *.7z
 *.rar
@@ -14,7 +36,7 @@ obj/
 *.tmp
 *.log
 
-# Python
+# ── Python ───────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 .venv/
@@ -24,7 +46,7 @@ venv/
 !.env.example
 .pytest_cache/
 
-# Node / web tooling
+# ── Node / web tooling ───────────────────────────────────────────────────
 node_modules/
 .next/
 .vite/
@@ -33,7 +55,7 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# IDE/editor local state
+# ── IDE/editor local state ───────────────────────────────────────────────
 .vscode/settings.json
 .idea/
 *.swp
