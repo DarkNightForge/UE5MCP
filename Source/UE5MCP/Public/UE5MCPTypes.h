@@ -11,6 +11,7 @@ enum class EUE5MCPActionType : uint8
 {
 	GetSelectionContext,
 	FindActors,
+	ReadLogs,
 	SelectActors,
 	SetActorFolder,
 	SetActorTransform,
@@ -57,6 +58,17 @@ struct FUE5MCPFindActorsQuery
 	int32 MaxResults = 100;
 };
 
+/** Bounded query parameters for the read_logs read-only diagnostics tool. Returns
+ *  the most recent lines from the plugin's structured LogUE5MCP buffer (tool calls,
+ *  refusals, errors) so an agent can self-correct without re-running an action. */
+struct FUE5MCPReadLogsQuery
+{
+	/** Cap on returned lines; the executor clamps to [1, FUE5MCPLog::MaxBufferedLines]. */
+	int32 MaxLines = 100;
+	/** Optional case-insensitive substring filter (e.g. "refused", an action id). */
+	FString Contains;
+};
+
 /** Optional absolute transform components for set_actor_transform. Each field is
  *  applied only when its bHas* flag is set; unset components are left unchanged.
  *  Rotation is carried as Euler degrees, matching the context pack's rotation output. */
@@ -88,6 +100,7 @@ struct FUE5MCPAction
 	EUE5MCPRiskLevel Risk = EUE5MCPRiskLevel::ReadOnly;
 	FName NewFolderPath;
 	FUE5MCPFindActorsQuery FindQuery;
+	FUE5MCPReadLogsQuery ReadLogsQuery;
 	FUE5MCPTransformDelta Transform;
 	FVector DuplicateOffset = FVector::ZeroVector;
 	FString SpawnClassPath;
@@ -125,6 +138,8 @@ struct FUE5MCPActionResult
 	FString RefusalCode;
 	int32 ChangedCount = 0;
 	TArray<FUE5MCPActorSummary> FoundActors;
+	/** Populated by read_logs only: the matching structured log lines, oldest→newest. */
+	TArray<FString> LogLines;
 };
 
 struct FUE5MCPExecutionResult
@@ -191,6 +206,7 @@ struct FUE5MCPActionRequest
 	TArray<FString> TargetPaths;
 	FName FolderPath;
 	FUE5MCPFindActorsQuery FindQuery;
+	FUE5MCPReadLogsQuery ReadLogsQuery;
 	FUE5MCPTransformDelta Transform;
 	bool bHasDuplicateOffset = false;
 	FVector DuplicateOffset = FVector::ZeroVector;

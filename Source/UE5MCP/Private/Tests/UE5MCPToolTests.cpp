@@ -11,6 +11,7 @@
 #include "Tests/AutomationEditorCommon.h"
 #include "UE5MCPActionExecutor.h"
 #include "UE5MCPContextCollector.h"
+#include "UE5MCPEditorService.h"
 #include "UE5MCPTargetResolver.h"
 #include "UE5MCPTestHelpers.h"
 #include "UE5MCPTypes.h"
@@ -180,6 +181,53 @@ bool FUE5MCPFindActorsCapTest::RunTest(const FString& Parameters)
 	}
 	TestTrue(TEXT("Truncation reported in the message"),
 		UE5MCPTests::LogLinesContain(Result.UserVisibleLogLines, TEXT("truncated")));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPReadLogsFiltersAndCapsTest,
+	"UE5MCP.Tools.ReadLogsReturnsFilteredRecentLines", UE5MCPTests::KernelTestFlags)
+bool FUE5MCPReadLogsFiltersAndCapsTest::RunTest(const FString& Parameters)
+{
+	// Seed the shared structured log with uniquely-marked lines so the assertions
+	// hold regardless of whatever else the buffer already contains.
+	FUE5MCPLog& Log = FUE5MCPEditorService::Get().GetLog();
+	const FString Needle = TEXT("UE5MCPReadLogsMarker_4711");
+	for (int32 Index = 0; Index < 5; ++Index)
+	{
+		Log.Append(FString::Printf(TEXT("%s line %d"), *Needle, Index));
+	}
+
+	FUE5MCPResolvedAction Resolved;
+	Resolved.Action.Id = TEXT("test-read-logs");
+	Resolved.Action.Type = EUE5MCPActionType::ReadLogs;
+	Resolved.Action.Risk = EUE5MCPRiskLevel::ReadOnly;
+	Resolved.Action.ReadLogsQuery.Contains = Needle;
+	Resolved.Action.ReadLogsQuery.MaxLines = 3;
+
+	const FUE5MCPExecutionResult Result = FUE5MCPActionExecutor::ExecuteApprovedPlan(
+		UE5MCPTests::WrapPlanForTest(Resolved));
+
+	TestTrue(TEXT("Read-only read_logs executed"), Result.bSuccess);
+	TestEqual(TEXT("One action result"), Result.ActionResults.Num(), 1);
+	if (Result.ActionResults.Num() == 1)
+	{
+		const FUE5MCPActionResult& Action = Result.ActionResults[0];
+		TestEqual(TEXT("Capped to the 3 most recent matching lines"), Action.LogLines.Num(), 3);
+		// The cap drops the oldest matches and keeps chronological order (line 2,3,4).
+		TestTrue(TEXT("Drops the oldest, keeps the newest matching lines"),
+			Action.LogLines.Num() == 3
+			&& Action.LogLines[0].Contains(TEXT("line 2"))
+			&& Action.LogLines[2].Contains(TEXT("line 4")));
+		bool bAllMatch = true;
+		for (const FString& Line : Action.LogLines)
+		{
+			bAllMatch &= Line.Contains(Needle);
+		}
+		TestTrue(TEXT("Every returned line matches the filter"), bAllMatch);
+	}
+	TestTrue(TEXT("Message reports the read-only readback"),
+		UE5MCPTests::LogLinesContain(Result.UserVisibleLogLines, TEXT("read_logs returned")));
 
 	return true;
 }

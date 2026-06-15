@@ -81,6 +81,20 @@ const TOOLS = [
     annotations: { title: 'Find actors', readOnlyHint: true },
   },
   {
+    name: 'read_logs',
+    risk: 'read_only',
+    description: 'Read back recent UE5MCP structured log lines from the running editor — tool calls, refusals, and errors, exactly as the plugin recorded them (read-only, capped). Use this after a refusal or an unexpected result to see precisely what the plugin reported, then self-correct instead of guessing.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        max_lines: { type: 'number', description: 'Max most-recent lines to return (default 100, max 512).' },
+        contains: { type: 'string', description: 'Case-insensitive substring filter, e.g. "refused", "Rejected", or an action id.' },
+      },
+      additionalProperties: false,
+    },
+    annotations: { title: 'Read UE5MCP logs', readOnlyHint: true },
+  },
+  {
     name: 'preview_actions',
     risk: 'read_only',
     description: 'Have the UE5MCP plugin validate a typed action list and return its exact effect preview WITHOUT executing anything. Use before a mutating call whose effect is not obvious from its arguments, and surface the preview to the user.',
@@ -287,6 +301,7 @@ function makeAction(tool, risk, targets = [], params = {}) {
 const PLUGIN_TOOL_RISK = {
   get_selection_context: 'read_only',
   find_actors: 'read_only',
+  read_logs: 'read_only',
   select_actors: 'low_risk',
   set_actor_folder: 'low_risk',
   set_actor_transform: 'low_risk',
@@ -446,6 +461,14 @@ const HANDLERS = {
     return runReadOnlyPlan('Search loaded editor actors.', makeAction('find_actors', 'read_only', [], params));
   },
 
+  async read_logs(args = {}) {
+    const params = {};
+    for (const key of ['max_lines', 'contains']) {
+      if (args[key] !== undefined) params[key] = args[key];
+    }
+    return runReadOnlyPlan('Read recent UE5MCP log lines.', makeAction('read_logs', 'read_only', [], params));
+  },
+
   async preview_actions(args) {
     const actions = args.actions.map((entry) => {
       const risk = PLUGIN_TOOL_RISK[entry.tool] ?? 'low_risk';
@@ -545,14 +568,15 @@ async function handleRequest(message) {
           result: {
             protocolVersion,
             capabilities: { tools: {} },
-            serverInfo: { name: 'ue5mcp', version: '0.2.0' },
+            serverInfo: { name: 'ue5mcp', version: '0.3.0' },
             instructions:
               'UE5MCP drives a LIVE Unreal Editor through typed, policy-checked, undoable tool calls. ' +
-              'Read tools (get_selection, find_actors, preview_actions) are safe and free. Mutating tools are ' +
+              'Read tools (get_selection, find_actors, read_logs, preview_actions) are safe and free. Mutating tools are ' +
               'approved by the user via the tool-permission prompt — make every call self-describing, and for ' +
               'non-obvious effects call preview_actions first and surface the preview. All mutations are ' +
               'reversible with editor Undo (one step per call). Actor targets must be exact paths from ' +
-              'get_selection/find_actors/spawn results.',
+              'get_selection/find_actors/spawn results. After a refusal or surprising result, call read_logs ' +
+              "to read the plugin's own structured reasons before retrying.",
           },
         });
       }

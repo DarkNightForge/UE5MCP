@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "summary": "Read the recent UE5MCP log lines to diagnose the last refusal",
+  "requires_approval": false,
+  "requires_second_confirmation": false,
+  "actions": [
+    {
+      "id": "read-logs-01",
+      "tool": "read_logs",
+      "risk": "read_only",
+      "targets": [],
+      "params": {
+        "max_lines": 50,
+        "contains": "refused"
+      }
+    }
+  ]
+}

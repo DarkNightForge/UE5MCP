@@ -148,6 +148,7 @@ FUE5MCPPlanValidationResult FUE5MCPPlanValidator::ValidateAndResolve(const FUE5M
 		Resolved.Action.Risk = Tool->Risk;
 		Resolved.Action.NewFolderPath = ActionRequest.FolderPath;
 		Resolved.Action.FindQuery = ActionRequest.FindQuery;
+		Resolved.Action.ReadLogsQuery = ActionRequest.ReadLogsQuery;
 		Resolved.Action.Transform = ActionRequest.Transform;
 		Resolved.Action.DuplicateOffset = ActionRequest.DuplicateOffset;
 		Resolved.Action.SpawnClassPath = ActionRequest.SpawnClassPath;

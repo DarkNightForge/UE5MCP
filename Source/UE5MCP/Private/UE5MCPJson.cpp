@@ -315,6 +315,14 @@ bool UE5MCPJson::ParsePlanRequest(const FString& Body, FUE5MCPPlanRequest& OutRe
 				{
 					ActionRequest.FindQuery.MaxResults = static_cast<int32>(NumberValue);
 				}
+				else if (Key == TEXT("max_lines") && Value->TryGetNumber(NumberValue))
+				{
+					ActionRequest.ReadLogsQuery.MaxLines = static_cast<int32>(NumberValue);
+				}
+				else if (Key == TEXT("contains") && Value->TryGetString(StringValue))
+				{
+					ActionRequest.ReadLogsQuery.Contains = StringValue;
+				}
 			}
 
 			// find_actors uses folder_path as its folder filter as well.
@@ -385,6 +393,15 @@ FString UE5MCPJson::SerializeExecutionResult(const FUE5MCPExecutionResult& Resul
 				Found.Add(MakeShared<FJsonValueObject>(ActorSummaryToJson(Summary)));
 			}
 			ResultObject->SetArrayField(TEXT("found_actors"), Found);
+		}
+		if (!ActionResult.LogLines.IsEmpty())
+		{
+			TArray<TSharedPtr<FJsonValue>> Lines;
+			for (const FString& Line : ActionResult.LogLines)
+			{
+				Lines.Add(MakeShared<FJsonValueString>(Line));
+			}
+			ResultObject->SetArrayField(TEXT("log_lines"), Lines);
 		}
 		ActionResults.Add(MakeShared<FJsonValueObject>(ResultObject));
 	}

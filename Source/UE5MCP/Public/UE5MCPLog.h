@@ -19,9 +19,11 @@ public:
 	void Append(const FString& Line);
 	const TArray<FString>& GetLines() const { return Lines; }
 
+	/** Ring-buffer cap; also the hard upper bound on a read_logs request. */
+	static constexpr int32 MaxBufferedLines = 512;
+
 	FOnUE5MCPLogLine OnLine;
 
 private:
-	static constexpr int32 MaxBufferedLines = 512;
 	TArray<FString> Lines;
 };

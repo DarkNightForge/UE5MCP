@@ -42,6 +42,9 @@ class ExampleFileTests(unittest.TestCase):
     def test_spawn_cubes_is_valid(self):
         self.assertEqual(validate_plan(load_example("spawn-cubes.json")), [])
 
+    def test_read_logs_is_valid(self):
+        self.assertEqual(validate_plan(load_example("read-logs.json")), [])
+
     def test_invalid_examples_fail_for_documented_rules(self):
         problems = validate_plan(load_example("invalid-empty-targets.json"))
         self.assertIn("R6", rules(problems))
@@ -174,6 +177,52 @@ class RuleTests(unittest.TestCase):
     def test_read_only_plan_needs_no_fingerprint_or_approval(self):
         plan = load_example("read-only-context.json")
         self.assertEqual(validate_plan(plan), [])
+
+
+class ReadLogsTests(unittest.TestCase):
+    def read_logs_plan(self, params):
+        return {
+            "schema_version": 1,
+            "summary": "Read recent UE5MCP log lines.",
+            "requires_approval": False,
+            "actions": [
+                {
+                    "id": "read-logs-01",
+                    "tool": "read_logs",
+                    "risk": "read_only",
+                    "targets": [],
+                    "params": params,
+                }
+            ],
+        }
+
+    def test_no_params_is_valid(self):
+        # read_logs is read-only: it needs neither approval nor a fingerprint.
+        self.assertEqual(validate_plan(self.read_logs_plan({})), [])
+
+    def test_filters_are_valid(self):
+        self.assertEqual(
+            validate_plan(self.read_logs_plan({"max_lines": 50, "contains": "refused"})), []
+        )
+
+    def test_unknown_param_rejected(self):
+        self.assertIn("R9", rules(validate_plan(self.read_logs_plan({"severity": "error"}))))
+
+    def test_max_lines_must_be_int(self):
+        self.assertIn("R9", rules(validate_plan(self.read_logs_plan({"max_lines": 1.5}))))
+
+    def test_max_lines_bool_rejected(self):
+        self.assertIn("R9", rules(validate_plan(self.read_logs_plan({"max_lines": True}))))
+
+    def test_contains_must_be_non_empty_string(self):
+        self.assertIn("R9", rules(validate_plan(self.read_logs_plan({"contains": ""}))))
+
+    def test_targets_rejected(self):
+        plan = self.read_logs_plan({})
+        plan["actions"][0]["targets"] = [
+            "/Temp/Untitled_1.Untitled_1:PersistentLevel.StaticMeshActor_0"
+        ]
+        self.assertIn("R6", rules(validate_plan(plan)))
 
 
 class TransformTests(unittest.TestCase):

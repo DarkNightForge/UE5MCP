@@ -111,6 +111,16 @@ FString FUE5MCPPreviewModel::BuildPreviewText(const FUE5MCPResolvedAction& Resol
 	case EUE5MCPActionType::GetSelectionContext:
 		return TEXT("get_selection_context: snapshot the current selection (read-only)");
 
+	case EUE5MCPActionType::ReadLogs:
+	{
+		const FUE5MCPReadLogsQuery& Query = Action.ReadLogsQuery;
+		return FString::Printf(TEXT("read_logs: return up to %d most recent UE5MCP log line(s)%s (read-only)"),
+			Query.MaxLines,
+			Query.Contains.IsEmpty()
+				? TEXT("")
+				: *FString::Printf(TEXT(" containing '%s'"), *Query.Contains));
+	}
+
 	case EUE5MCPActionType::FindActors:
 	{
 		const FUE5MCPFindActorsQuery& Query = Action.FindQuery;

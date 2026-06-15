@@ -1,7 +1,7 @@
 # UE5MCP capability map
 
 Status: living product/planning document  
-Last updated: 2026-06-14  
+Last updated: 2026-06-14 (added `read_logs` diagnostics readback)  
 Source of truth for current tools: `Source/UE5MCP/Private/UE5MCPToolRegistry.cpp`, `docs/specs/action-plan-format.md`, `docs/specs/preview-approval-flow.md`, and `docs/validation-checklist.md`.
 
 This document tracks **breadth**: which parts of Unreal Engine development UE5MCP can currently observe, preview, mutate, refuse, and verify.
@@ -30,7 +30,7 @@ UE5MCP should grow by **governed capability**, not by opening an arbitrary execu
 
 | Level | Meaning | Current examples |
 | --- | --- | --- |
-| L0 Observe | Read context without mutation. | `get_selection`, `find_actors`, `preview_actions` |
+| L0 Observe | Read context without mutation. | `get_selection`, `find_actors`, `read_logs`, `preview_actions` |
 | L1 Organize | Low-risk, visible editor organization. | `select_actors`, `set_actor_folder` |
 | L2 Spatial | Scene layout, transform, duplication, bounded spawning. | `set_actor_transform`, `duplicate_actor_with_offset`, `spawn_actor_from_class` |
 | L3 Properties | Allowlisted actor/component/property edits. | planned |
@@ -46,6 +46,7 @@ Registry tools in v1:
 | --- | --- | --- | --- |
 | `get_selection_context` / MCP `get_selection` | read-only | Editor context | Current world, selected actors, capped loaded-actor context. |
 | `find_actors` | read-only | Actor discovery | Finds loaded editor-world actors by class, label, tag, folder, selected-only, capped results. |
+| `read_logs` | read-only | Logs / diagnostics | Returns recent `LogUE5MCP` lines (tool calls, refusals, errors); capped (default 100, max 512), oldest→newest, optional substring filter. |
 | MCP `preview_actions` | read-only | UX / preview | Validates and resolves typed action plans without executing. |
 | `select_actors` | low mutation | Selection | Sets editor selection to explicit actor targets. |
 | `set_actor_folder` | low mutation | World Outliner organization | Moves target actors into a named folder. |
@@ -56,8 +57,8 @@ Registry tools in v1:
 
 Current verification snapshot:
 
-- Public repo Python checks: `58 passed` in the last local verification run.
-- UE automation docs claim 56/56 headless tests on UE 5.7.4 Linux source build.
+- Public repo Python checks: `66 passed` in the last local verification run.
+- UE automation suite is now 57 headless tests (last full run 56/56 on UE 5.7.4 Linux source build; the new `read_logs` test is pending the next editor run).
 - Windows and Epic Games Launcher binary builds are not yet verified.
 - Full tool breadth is still actor/world-editor focused; most asset/Blueprint/team-pipeline workflows are not shipped.
 
@@ -317,11 +318,11 @@ Current verification snapshot:
 
 | Field | Current state |
 | --- | --- |
-| Status | `planned`; current internal log exists but no agent readback tool |
-| Current support | UE5MCP writes `LogUE5MCP` lines and returns structured results for tool calls. |
-| Missing | `read_logs`, output log queries, compile/cook error parsing, performance snapshots, stat commands. |
-| Next useful slice | `read_logs` / diagnostics readback tool with caps, filters, and no mutation. |
-| Proof needed | Agent can self-correct after refusal/error using structured logs instead of hallucinating. |
+| Status | `partial` — `read_logs` ships a read-only readback of the plugin's own structured log; broader output-log/build-log capture is still missing |
+| Current support | UE5MCP writes `LogUE5MCP` lines and returns structured results for tool calls. `read_logs` returns the most recent buffered `LogUE5MCP` lines (default 100, clamped to `[1, 512]`), oldest→newest, with an optional case-insensitive substring filter and no mutation. |
+| Missing | Engine-wide output-log (`GLog`) capture beyond UE5MCP's own lines, severity-tagged filtering, compile/cook error parsing, performance snapshots, stat commands. |
+| Next useful slice | Severity-tagged log entries and engine output-log (`GLog`) capture surfaced through the same capped/filtered readback. |
+| Proof needed | Agent self-corrects after a refusal/error by calling `read_logs` and acting on the plugin's structured reasons instead of hallucinating. Covered by `UE5MCP.Tools.ReadLogsReturnsFilteredRecentLines` and the Python `ReadLogsTests`. |
 
 ### 27. Build, cook, package, and automation
 
@@ -367,12 +368,15 @@ Current verification snapshot:
 
 Ranked by leverage and fit with the governed model:
 
-1. **`read_logs` / diagnostics readback** (`L0`) — helps agents self-correct without increasing mutation risk.
-2. **Actor labels and tags** (`L1`) — high-usefulness, low-risk, obvious scene-cleanup demos.
-3. **Source-control/package status readback** (`L0/L6`) — required before serious asset/package mutation.
-4. **Allowlisted property edits** (`L3`) — gateway to lights/cameras/material instances/components without open exec.
-5. **Read-only Blueprint/material/asset inspection** (`L0`) — expands project understanding before risky mutation.
-6. **Capability registry / `list_capabilities`** (`L0`) — lets agents know exactly what is possible now and prevents hallucinated tools.
+1. **Actor labels and tags** (`L1`) — high-usefulness, low-risk, obvious scene-cleanup demos.
+2. **Source-control/package status readback** (`L0/L6`) — required before serious asset/package mutation.
+3. **Allowlisted property edits** (`L3`) — gateway to lights/cameras/material instances/components without open exec.
+4. **Read-only Blueprint/material/asset inspection** (`L0`) — expands project understanding before risky mutation.
+5. **Capability registry / `list_capabilities`** (`L0`) — lets agents know exactly what is possible now and prevents hallucinated tools.
+
+Shipped since last revision:
+
+- **`read_logs` / diagnostics readback** (`L0`) — read-only readback of the plugin's structured log so agents self-correct after a refusal/error. See domain 26.
 
 ## Demo coverage matrix
 
@@ -385,7 +389,7 @@ Ranked by leverage and fit with the governed model:
 | PIE/SIE mutation refusal | editor-state guardrails | ready / covered by tests |
 | Over-cap spawn refusal | blast-radius limit | ready if result UX is clear |
 | Actor labels/tags cleanup | low-risk metadata breadth | needs new tools |
-| Read logs and self-correct | refusal/error recovery loop | needs `read_logs` tool |
+| Read logs and self-correct | refusal/error recovery loop | ready — `read_logs` shipped (read-only, capped, filtered) |
 | Source-control-safe package mutation | studio adoption proof | needs design + implementation |
 
 ## Rules: when to update this document

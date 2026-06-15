@@ -90,6 +90,12 @@ REGISTRY = {
         "requires_targets": False,
         "accepts_targets": False,
     },
+    "read_logs": {
+        "risk": READ_ONLY,
+        "params": {"max_lines": int, "contains": str},
+        "requires_targets": False,
+        "accepts_targets": False,
+    },
     "select_actors": {
         "risk": LOW_RISK,
         "params": {},

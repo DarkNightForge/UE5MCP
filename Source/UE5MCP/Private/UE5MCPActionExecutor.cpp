@@ -12,6 +12,7 @@
 #include "GameFramework/Actor.h"
 #include "Subsystems/EditorActorSubsystem.h"
 #include "UE5MCPContextCollector.h"
+#include "UE5MCPEditorService.h"
 #include "UE5MCPSettings.h"
 #include "UE5MCPTargetResolver.h"
 
@@ -61,6 +62,9 @@ FUE5MCPExecutionResult FUE5MCPActionExecutor::ExecuteApprovedPlan(const FUE5MCPV
 			break;
 		case EUE5MCPActionType::FindActors:
 			ActionResult = ExecuteFindActors(ResolvedAction);
+			break;
+		case EUE5MCPActionType::ReadLogs:
+			ActionResult = ExecuteReadLogs(ResolvedAction);
 			break;
 		case EUE5MCPActionType::SelectActors:
 			ActionResult = ExecuteSelectActors(ResolvedAction);
@@ -518,6 +522,47 @@ FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteFindActors(const FUE5MCPResolv
 	Result.Message = FString::Printf(TEXT("find_actors matched %d actor(s)%s"),
 		Result.FoundActors.Num(),
 		bTruncated ? TEXT(" (results truncated at the cap)") : TEXT(""));
+	return Result;
+}
+
+FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteReadLogs(const FUE5MCPResolvedAction& ResolvedAction)
+{
+	const FUE5MCPAction& Action = ResolvedAction.Action;
+	FUE5MCPActionResult Result;
+	Result.ActionId = Action.Id;
+
+	// Clamp the request to the buffer's hard bound (defence in depth): the buffer
+	// holds at most MaxBufferedLines, and a client cannot ask for more or for zero.
+	const int32 MaxLines = FMath::Clamp(Action.ReadLogsQuery.MaxLines, 1, FUE5MCPLog::MaxBufferedLines);
+	const FString& Filter = Action.ReadLogsQuery.Contains;
+
+	// Snapshot the structured log buffer. This read runs during execution, BEFORE the
+	// service appends this call's own result line, so read_logs never describes itself.
+	const TArray<FString>& AllLines = FUE5MCPEditorService::Get().GetLog().GetLines();
+
+	TArray<FString> Matched;
+	for (const FString& Line : AllLines)
+	{
+		if (Filter.IsEmpty() || Line.Contains(Filter))
+		{
+			Matched.Add(Line);
+		}
+	}
+
+	// Keep the most recent MaxLines (oldest dropped), preserving chronological order.
+	const int32 TotalMatched = Matched.Num();
+	const bool bTruncated = TotalMatched > MaxLines;
+	if (bTruncated)
+	{
+		Matched.RemoveAt(0, TotalMatched - MaxLines);
+	}
+
+	Result.LogLines = MoveTemp(Matched);
+	Result.bSuccess = true;
+	Result.Message = FString::Printf(TEXT("read_logs returned %d of %d matching log line(s)%s%s (read-only)"),
+		Result.LogLines.Num(), TotalMatched,
+		Filter.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" filtered by '%s'"), *Filter),
+		bTruncated ? TEXT(" (older lines truncated at the cap)") : TEXT(""));
 	return Result;
 }
 

@@ -4,7 +4,7 @@ Claims stay honest by mapping to checks. The plugin's behavior is verified by a 
 
 ## Automation suite (in-editor, headless)
 
-`Source/UE5MCP/Private/Tests/` carries a headless automation suite — **56 tests, no display required** — run with:
+`Source/UE5MCP/Private/Tests/` carries a headless automation suite — **57 tests, no display required** — run with:
 
 ```bash
 <UE-ROOT>/Engine/Binaries/<Platform>/UnrealEditor-Cmd <YOUR-PROJECT>/YourProject.uproject \
@@ -12,13 +12,13 @@ Claims stay honest by mapping to checks. The plugin's behavior is verified by a 
   -ReportExportPath=/tmp/ue5mcp_report
 ```
 
-It covers: the executor happy path with single-step undo/redo; every validator format rule; target-resolution round-trips; all tools (observe, find, select, organize, transform, duplicate, allowlisted spawn, destructive delete) including bounded queries; the full approval lifecycle (empty selection, stale selection, stale world, play-mode refusal that keeps the plan approvable, plan consumption, supersede-by-panel, external-approval gating); and the MCP/bridge boundary (read-only executes immediately, mutations pend/gate, the transport cannot execute, malformed/unknown requests refused with reasons, loopback-host classification). **Last run: 56/56 passing on UE 5.7.4 (Linux source build).**
+It covers: the executor happy path with single-step undo/redo; every validator format rule; target-resolution round-trips; all tools (observe, find, read logs, select, organize, transform, duplicate, allowlisted spawn, destructive delete) including bounded queries; the full approval lifecycle (empty selection, stale selection, stale world, play-mode refusal that keeps the plan approvable, plan consumption, supersede-by-panel, external-approval gating); and the MCP/bridge boundary (read-only executes immediately, mutations pend/gate, the transport cannot execute, malformed/unknown requests refused with reasons, loopback-host classification). **Last full run: 56/56 passing on UE 5.7.4 (Linux source build); the new `read_logs` test (`UE5MCP.Tools.ReadLogsReturnsFilteredRecentLines`) is added and pending the next headless run in the editor.**
 
 ## Repository scripts (the typed-plan contract)
 
 | # | Check | Command |
 | --- | --- | --- |
-| A1 | Valid example plans pass the spec | `python3 scripts/validate_plan.py examples/plans/organize-selection.json examples/plans/read-only-context.json examples/plans/transform-selection.json examples/plans/spawn-cubes.json` |
+| A1 | Valid example plans pass the spec | `python3 scripts/validate_plan.py examples/plans/organize-selection.json examples/plans/read-only-context.json examples/plans/read-logs.json examples/plans/transform-selection.json examples/plans/spawn-cubes.json` |
 | A2 | Invalid example plans are rejected for the documented reasons | `python3 scripts/validate_plan.py --expect-invalid examples/plans/invalid-empty-targets.json examples/plans/invalid-destructive-no-confirmation.json examples/plans/invalid-noop-transform.json` |
 | A3 | Script unit tests pass | `python3 -m unittest discover -s tests` |
 
