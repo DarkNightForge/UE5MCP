@@ -87,6 +87,51 @@ bool FUE5MCPJsonRejectsMalformedTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPJsonParseLabelAndTagsTest,
+	"UE5MCP.Json.ParsesLabelAndTags", UE5MCPTests::KernelTestFlags)
+bool FUE5MCPJsonParseLabelAndTagsTest::RunTest(const FString& Parameters)
+{
+	const FString Body = TEXT(R"json({
+		"schema_version": 1,
+		"summary": "Label and tag",
+		"requires_approval": true,
+		"context_fingerprint": { "scene": "DemoScene", "selected_object_paths": ["PersistentLevel.Crate_1"] },
+		"actions": [
+			{
+				"id": "a1",
+				"tool": "set_actor_label",
+				"risk": "low_risk",
+				"targets": ["PersistentLevel.Crate_1"],
+				"params": { "label": "  Hero Spawn  " }
+			},
+			{
+				"id": "a2",
+				"tool": "add_actor_tags",
+				"risk": "low_risk",
+				"targets": ["PersistentLevel.Crate_1"],
+				"params": { "tags": ["Rock", " Cleanup ", "Rock"] }
+			}
+		]
+	})json");
+
+	FUE5MCPPlanRequest Request;
+	TArray<FString> Errors;
+	TestTrue(TEXT("Envelope parses"), UE5MCPJson::ParsePlanRequest(Body, Request, Errors));
+	TestEqual(TEXT("No parse errors"), Errors.Num(), 0);
+	TestEqual(TEXT("two actions"), Request.Actions.Num(), 2);
+	if (Request.Actions.Num() == 2)
+	{
+		// Label is trimmed.
+		TestEqual(TEXT("a1 label trimmed"), Request.Actions[0].NewLabel, FString(TEXT("Hero Spawn")));
+		// Tags: trimmed, de-duplicated (AddUnique), empty/whitespace dropped.
+		TestEqual(TEXT("a2 two unique tags"), Request.Actions[1].Tags.Num(), 2);
+		TestTrue(TEXT("a2 has Rock"), Request.Actions[1].Tags.Contains(FName(TEXT("Rock"))));
+		TestTrue(TEXT("a2 has trimmed Cleanup"), Request.Actions[1].Tags.Contains(FName(TEXT("Cleanup"))));
+	}
+
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPJsonParseTransformTest,
 	"UE5MCP.Json.ParsesTransformParams", UE5MCPTests::KernelTestFlags)
 bool FUE5MCPJsonParseTransformTest::RunTest(const FString& Parameters)

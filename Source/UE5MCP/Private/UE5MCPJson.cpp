@@ -174,6 +174,38 @@ bool UE5MCPJson::ParsePlanRequest(const FString& Body, FUE5MCPPlanRequest& OutRe
 					Normalized.ReplaceInline(TEXT("\\"), TEXT("/"));
 					ActionRequest.FolderPath = FName(*Normalized);
 				}
+				else if (Key == TEXT("label") && Value->TryGetString(StringValue))
+				{
+					// Trimmed display label for set_actor_label; the validator refuses an
+					// empty/whitespace label as a no-op.
+					ActionRequest.NewLabel = StringValue.TrimStartAndEnd();
+				}
+				else if (Key == TEXT("tags"))
+				{
+					// add/remove_actor_tags: a non-empty array of non-empty tag strings.
+					// Drop empty/whitespace entries with an error; the validator refuses
+					// an action that ends up with no tags.
+					const TArray<TSharedPtr<FJsonValue>>* TagValues = nullptr;
+					if (!Value->TryGetArray(TagValues))
+					{
+						OutErrors.Add(FString::Printf(TEXT("actions[%d] param 'tags' must be an array of strings"), Index));
+					}
+					else
+					{
+						for (const TSharedPtr<FJsonValue>& TagValue : *TagValues)
+						{
+							FString Tag;
+							if (TagValue->TryGetString(Tag) && !Tag.TrimStartAndEnd().IsEmpty())
+							{
+								ActionRequest.Tags.AddUnique(FName(*Tag.TrimStartAndEnd()));
+							}
+							else
+							{
+								OutErrors.Add(FString::Printf(TEXT("actions[%d] has a non-string or empty tag"), Index));
+							}
+						}
+					}
+				}
 				else if (Key == TEXT("location"))
 				{
 					if (TryParseVector3(Value, VectorValue))

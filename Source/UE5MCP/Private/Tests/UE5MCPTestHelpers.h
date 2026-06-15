@@ -93,6 +93,36 @@ namespace UE5MCPTests
 		return Plan;
 	}
 
+	inline FUE5MCPValidatedPlan BuildSetLabelPlan(const TArray<AActor*>& Actors, const FString& Label)
+	{
+		FUE5MCPResolvedAction Resolved;
+		Resolved.Action.Id = TEXT("test-set-label");
+		Resolved.Action.Type = EUE5MCPActionType::SetActorLabel;
+		Resolved.Action.Risk = EUE5MCPRiskLevel::LowMutation;
+		Resolved.Action.NewLabel = Label;
+		for (AActor* Actor : Actors)
+		{
+			Resolved.Action.TargetActors.Add(Actor);
+			Resolved.TargetLabels.Add(Actor->GetActorLabel());
+		}
+		return WrapPlanForTest(Resolved);
+	}
+
+	inline FUE5MCPValidatedPlan BuildTagsPlan(const TArray<AActor*>& Actors, EUE5MCPActionType Type, const TArray<FName>& Tags)
+	{
+		FUE5MCPResolvedAction Resolved;
+		Resolved.Action.Id = Type == EUE5MCPActionType::AddActorTags ? TEXT("test-add-tags") : TEXT("test-remove-tags");
+		Resolved.Action.Type = Type;
+		Resolved.Action.Risk = EUE5MCPRiskLevel::LowMutation;
+		Resolved.Action.Tags = Tags;
+		for (AActor* Actor : Actors)
+		{
+			Resolved.Action.TargetActors.Add(Actor);
+			Resolved.TargetLabels.Add(Actor->GetActorLabel());
+		}
+		return WrapPlanForTest(Resolved);
+	}
+
 	inline FUE5MCPValidatedPlan BuildSetTransformPlan(const TArray<AActor*>& Actors, const FUE5MCPTransformDelta& Delta)
 	{
 		FUE5MCPResolvedAction Resolved;

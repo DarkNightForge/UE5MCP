@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "summary": "Invalid: add_actor_tags with an empty tag list is a refused no-op (R9)",
+  "requires_approval": true,
+  "requires_second_confirmation": false,
+  "context_fingerprint": {
+    "scene": "/Temp/Untitled_1.Untitled_1",
+    "selected_object_paths": [
+      "/Temp/Untitled_1.Untitled_1:PersistentLevel.StaticMeshActor_0"
+    ]
+  },
+  "actions": [
+    {
+      "id": "add-actor-tags-empty",
+      "tool": "add_actor_tags",
+      "risk": "low_risk",
+      "targets": [
+        "/Temp/Untitled_1.Untitled_1:PersistentLevel.StaticMeshActor_0"
+      ],
+      "params": {
+        "tags": []
+      }
+    }
+  ]
+}

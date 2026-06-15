@@ -13,6 +13,53 @@ FString FUE5MCPPreviewModel::BuildPreviewText(const FUE5MCPResolvedAction& Resol
 		return FString::Printf(TEXT("set_actor_folder: move %d actor(s) to folder '%s'"),
 			Action.TargetActors.Num(), *Action.NewFolderPath.ToString());
 
+	case EUE5MCPActionType::SetActorLabel:
+	{
+		FString Text = FString::Printf(TEXT("set_actor_label: set label of %d actor(s) to '%s'"),
+			Action.TargetActors.Num(), *Action.NewLabel);
+		for (const TWeakObjectPtr<AActor>& ActorPtr : Action.TargetActors)
+		{
+			if (const AActor* Actor = ActorPtr.Get())
+			{
+				Text += FString::Printf(TEXT("\n  %s -> '%s'"), *Actor->GetActorLabel(), *Action.NewLabel);
+			}
+		}
+		return Text;
+	}
+
+	case EUE5MCPActionType::AddActorTags:
+	case EUE5MCPActionType::RemoveActorTags:
+	{
+		const bool bAdd = Action.Type == EUE5MCPActionType::AddActorTags;
+		TArray<FString> TagStrings;
+		for (const FName& Tag : Action.Tags)
+		{
+			TagStrings.Add(Tag.ToString());
+		}
+		FString Text = FString::Printf(TEXT("%s: %s tag(s) [%s] %s %d actor(s)"),
+			bAdd ? TEXT("add_actor_tags") : TEXT("remove_actor_tags"),
+			bAdd ? TEXT("add") : TEXT("remove"),
+			*FString::Join(TagStrings, TEXT(", ")),
+			bAdd ? TEXT("to") : TEXT("from"),
+			Action.TargetActors.Num());
+		for (const TWeakObjectPtr<AActor>& ActorPtr : Action.TargetActors)
+		{
+			const AActor* Actor = ActorPtr.Get();
+			if (!Actor)
+			{
+				continue;
+			}
+			TArray<FString> CurrentTags;
+			for (const FName& Tag : Actor->Tags)
+			{
+				CurrentTags.Add(Tag.ToString());
+			}
+			Text += FString::Printf(TEXT("\n  %s: tags [%s]"), *Actor->GetActorLabel(),
+				*FString::Join(CurrentTags, TEXT(", ")));
+		}
+		return Text;
+	}
+
 	case EUE5MCPActionType::SetActorTransform:
 	{
 		const FUE5MCPTransformDelta& Delta = Action.Transform;

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "summary": "Rename the selected actor's World Outliner display label",
+  "requires_approval": true,
+  "requires_second_confirmation": false,
+  "context_fingerprint": {
+    "scene": "/Temp/Untitled_1.Untitled_1",
+    "selected_object_paths": [
+      "/Temp/Untitled_1.Untitled_1:PersistentLevel.StaticMeshActor_0"
+    ]
+  },
+  "actions": [
+    {
+      "id": "set-actor-label-01",
+      "tool": "set_actor_label",
+      "risk": "low_risk",
+      "targets": [
+        "/Temp/Untitled_1.Untitled_1:PersistentLevel.StaticMeshActor_0"
+      ],
+      "params": {
+        "label": "Hero Spawn Point"
+      }
+    }
+  ]
+}

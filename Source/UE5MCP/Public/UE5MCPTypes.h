@@ -14,6 +14,9 @@ enum class EUE5MCPActionType : uint8
 	ReadLogs,
 	SelectActors,
 	SetActorFolder,
+	SetActorLabel,
+	AddActorTags,
+	RemoveActorTags,
 	SetActorTransform,
 	DuplicateActorWithOffset,
 	SpawnActorFromClass,
@@ -99,6 +102,10 @@ struct FUE5MCPAction
 	EUE5MCPActionType Type = EUE5MCPActionType::GetSelectionContext;
 	EUE5MCPRiskLevel Risk = EUE5MCPRiskLevel::ReadOnly;
 	FName NewFolderPath;
+	/** set_actor_label target label (display label; the validator rejects an empty one). */
+	FString NewLabel;
+	/** add_actor_tags / remove_actor_tags tag set (the validator rejects an empty list). */
+	TArray<FName> Tags;
 	FUE5MCPFindActorsQuery FindQuery;
 	FUE5MCPReadLogsQuery ReadLogsQuery;
 	FUE5MCPTransformDelta Transform;
@@ -205,6 +212,8 @@ struct FUE5MCPActionRequest
 	FString RiskString;
 	TArray<FString> TargetPaths;
 	FName FolderPath;
+	FString NewLabel;
+	TArray<FName> Tags;
 	FUE5MCPFindActorsQuery FindQuery;
 	FUE5MCPReadLogsQuery ReadLogsQuery;
 	FUE5MCPTransformDelta Transform;

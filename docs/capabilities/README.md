@@ -1,7 +1,7 @@
 # UE5MCP capability map
 
 Status: living product/planning document  
-Last updated: 2026-06-14 (added `read_logs` diagnostics readback)  
+Last updated: 2026-06-15 (added `set_actor_label`, `add_actor_tags`, `remove_actor_tags`)  
 Source of truth for current tools: `Source/UE5MCP/Private/UE5MCPToolRegistry.cpp`, `docs/specs/action-plan-format.md`, `docs/specs/preview-approval-flow.md`, and `docs/validation-checklist.md`.
 
 This document tracks **breadth**: which parts of Unreal Engine development UE5MCP can currently observe, preview, mutate, refuse, and verify.
@@ -31,7 +31,7 @@ UE5MCP should grow by **governed capability**, not by opening an arbitrary execu
 | Level | Meaning | Current examples |
 | --- | --- | --- |
 | L0 Observe | Read context without mutation. | `get_selection`, `find_actors`, `read_logs`, `preview_actions` |
-| L1 Organize | Low-risk, visible editor organization. | `select_actors`, `set_actor_folder` |
+| L1 Organize | Low-risk, visible editor organization. | `select_actors`, `set_actor_folder`, `set_actor_label`, `add_actor_tags`, `remove_actor_tags` |
 | L2 Spatial | Scene layout, transform, duplication, bounded spawning. | `set_actor_transform`, `duplicate_actor_with_offset`, `spawn_actor_from_class` |
 | L3 Properties | Allowlisted actor/component/property edits. | planned |
 | L4 Assets | Content Browser/package-level operations. | deferred |
@@ -50,6 +50,9 @@ Registry tools in v1:
 | MCP `preview_actions` | read-only | UX / preview | Validates and resolves typed action plans without executing. |
 | `select_actors` | low mutation | Selection | Sets editor selection to explicit actor targets. |
 | `set_actor_folder` | low mutation | World Outliner organization | Moves target actors into a named folder. |
+| `set_actor_label` | low mutation | Metadata / naming | Sets each target's editor display label; empty label refused as no-op; display-only (not forced unique). |
+| `add_actor_tags` | low mutation | Metadata / tagging | Adds tags to each target's `AActor.Tags`; idempotent; empty list refused as no-op. |
+| `remove_actor_tags` | low mutation | Metadata / tagging | Removes tags from each target's `AActor.Tags`; idempotent; empty list refused as no-op. |
 | `set_actor_transform` | low mutation | Spatial layout | Sets absolute location/rotation/scale components; omitted components unchanged; no-op refused. |
 | `duplicate_actor_with_offset` | low mutation | Spatial layout | Duplicates target actors once with a typed offset. |
 | `spawn_actor_from_class` | low mutation | Bounded creation | Spawns allowlisted classes/meshes, max 25 instances/action. |
@@ -57,8 +60,8 @@ Registry tools in v1:
 
 Current verification snapshot:
 
-- Public repo Python checks: `66 passed` in the last local verification run.
-- UE automation suite is now 57 headless tests (last full run 56/56 on UE 5.7.4 Linux source build; the new `read_logs` test is pending the next editor run).
+- Public repo Python checks: `83 passed` in the last local verification run.
+- UE automation suite is now 60 headless tests (last full run 56/56 on UE 5.7.4 Linux source build; the `read_logs`, label, and tags tests are pending the next editor run).
 - Windows and Epic Games Launcher binary builds are not yet verified.
 - Full tool breadth is still actor/world-editor focused; most asset/Blueprint/team-pipeline workflows are not shipped.
 
@@ -128,11 +131,11 @@ Current verification snapshot:
 
 | Field | Current state |
 | --- | --- |
-| Status | `planned` |
-| Current support | Read tags/folders/labels through actor summaries; filter by tag/label/folder. |
-| Missing | Set label, add/remove tags, validate naming conventions, metadata recipes. |
-| Next useful slice | Add `set_actor_label` and `add/remove_actor_tags` as low-risk visible mutations. |
-| Proof needed | Preview exact label/tag changes, reject empty/no-op changes, one undo restores. |
+| Status | `shipped` |
+| Current support | `set_actor_label` sets each target's display label; `add_actor_tags` / `remove_actor_tags` mutate `AActor.Tags` idempotently. All three are low-risk, previewed, one undoable transaction, with empty label/empty tag-list refused as no-ops. Read tags/folders/labels through actor summaries; filter by tag/label/folder. |
+| Missing | Naming-convention validation, bulk metadata recipes, label uniqueness enforcement, rename-by-pattern. |
+| Next useful slice | Governed metadata recipes (validate against project naming rules; batch retag by query) on top of the shipped primitives. |
+| Proof needed | Covered by `UE5MCP.Executor.SetLabelAppliesThenUndoRedoReverts`, `UE5MCP.Executor.AddThenRemoveTagsWithUndo`, `UE5MCP.Json.ParsesLabelAndTags`, and the Python `LabelTests`/`TagTests` (pending the next in-editor headless run for the C++ trio). |
 
 ### 8. Components and allowlisted properties
 
@@ -368,14 +371,14 @@ Current verification snapshot:
 
 Ranked by leverage and fit with the governed model:
 
-1. **Actor labels and tags** (`L1`) — high-usefulness, low-risk, obvious scene-cleanup demos.
-2. **Source-control/package status readback** (`L0/L6`) — required before serious asset/package mutation.
-3. **Allowlisted property edits** (`L3`) — gateway to lights/cameras/material instances/components without open exec.
-4. **Read-only Blueprint/material/asset inspection** (`L0`) — expands project understanding before risky mutation.
-5. **Capability registry / `list_capabilities`** (`L0`) — lets agents know exactly what is possible now and prevents hallucinated tools.
+1. **Source-control/package status readback** (`L0/L6`) — required before serious asset/package mutation.
+2. **Allowlisted property edits** (`L3`) — gateway to lights/cameras/material instances/components without open exec.
+3. **Read-only Blueprint/material/asset inspection** (`L0`) — expands project understanding before risky mutation.
+4. **Capability registry / `list_capabilities`** (`L0`) — lets agents know exactly what is possible now and prevents hallucinated tools.
 
 Shipped since last revision:
 
+- **Actor labels and tags** (`L1`) — `set_actor_label`, `add_actor_tags`, `remove_actor_tags`: low-risk, previewed, idempotent, one undoable transaction. See domain 7.
 - **`read_logs` / diagnostics readback** (`L0`) — read-only readback of the plugin's structured log so agents self-correct after a refusal/error. See domain 26.
 
 ## Demo coverage matrix
@@ -388,7 +391,7 @@ Shipped since last revision:
 | Stale context refusal | preview bound to editor state | ready / covered by tests |
 | PIE/SIE mutation refusal | editor-state guardrails | ready / covered by tests |
 | Over-cap spawn refusal | blast-radius limit | ready if result UX is clear |
-| Actor labels/tags cleanup | low-risk metadata breadth | needs new tools |
+| Actor labels/tags cleanup | low-risk metadata breadth | ready — `set_actor_label` / `add_actor_tags` / `remove_actor_tags` shipped |
 | Read logs and self-correct | refusal/error recovery loop | ready — `read_logs` shipped (read-only, capped, filtered) |
 | Source-control-safe package mutation | studio adoption proof | needs design + implementation |
 

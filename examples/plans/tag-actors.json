@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "summary": "Tag the selected rock meshes for a cleanup pass",
+  "requires_approval": true,
+  "requires_second_confirmation": false,
+  "context_fingerprint": {
+    "scene": "/Temp/Untitled_1.Untitled_1",
+    "selected_object_paths": [
+      "/Temp/Untitled_1.Untitled_1:PersistentLevel.StaticMeshActor_0",
+      "/Temp/Untitled_1.Untitled_1:PersistentLevel.StaticMeshActor_1"
+    ]
+  },
+  "actions": [
+    {
+      "id": "add-actor-tags-01",
+      "tool": "add_actor_tags",
+      "risk": "low_risk",
+      "targets": [
+        "/Temp/Untitled_1.Untitled_1:PersistentLevel.StaticMeshActor_0",
+        "/Temp/Untitled_1.Untitled_1:PersistentLevel.StaticMeshActor_1"
+      ],
+      "params": {
+        "tags": ["Rock", "Cleanup"]
+      }
+    }
+  ]
+}

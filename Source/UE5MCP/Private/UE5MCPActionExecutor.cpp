@@ -54,6 +54,15 @@ FUE5MCPExecutionResult FUE5MCPActionExecutor::ExecuteApprovedPlan(const FUE5MCPV
 		case EUE5MCPActionType::SetActorFolder:
 			ActionResult = ExecuteSetActorFolder(ResolvedAction);
 			break;
+		case EUE5MCPActionType::SetActorLabel:
+			ActionResult = ExecuteSetActorLabel(ResolvedAction);
+			break;
+		case EUE5MCPActionType::AddActorTags:
+			ActionResult = ExecuteAddActorTags(ResolvedAction);
+			break;
+		case EUE5MCPActionType::RemoveActorTags:
+			ActionResult = ExecuteRemoveActorTags(ResolvedAction);
+			break;
 		case EUE5MCPActionType::SetActorTransform:
 			ActionResult = ExecuteSetActorTransform(ResolvedAction);
 			break;
@@ -132,6 +141,9 @@ bool FUE5MCPActionExecutor::HasMutations(const FUE5MCPValidatedPlan& Plan)
 	for (const FUE5MCPResolvedAction& ResolvedAction : Plan.Actions)
 	{
 		if (ResolvedAction.Action.Type == EUE5MCPActionType::SetActorFolder ||
+			ResolvedAction.Action.Type == EUE5MCPActionType::SetActorLabel ||
+			ResolvedAction.Action.Type == EUE5MCPActionType::AddActorTags ||
+			ResolvedAction.Action.Type == EUE5MCPActionType::RemoveActorTags ||
 			ResolvedAction.Action.Type == EUE5MCPActionType::SelectActors ||
 			ResolvedAction.Action.Type == EUE5MCPActionType::SetActorTransform ||
 			ResolvedAction.Action.Type == EUE5MCPActionType::DuplicateActorWithOffset ||
@@ -182,6 +194,174 @@ FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteSetActorFolder(const FUE5MCPRe
 			? TEXT("set_actor_folder found no valid actors to mutate.")
 			: FString::Printf(TEXT("set_actor_folder changed %d of %d requested actor(s) -> %s"),
 				ChangedCount, RequestedCount, *ResolvedAction.Action.NewFolderPath.ToString()));
+	return Result;
+}
+
+FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteSetActorLabel(const FUE5MCPResolvedAction& ResolvedAction)
+{
+	const FUE5MCPAction& Action = ResolvedAction.Action;
+	FUE5MCPActionResult Result;
+	Result.ActionId = Action.Id;
+
+	// No-op guard (defence in depth): the validator already refuses an empty label,
+	// but the executor never trusts an unvalidated plan to have done so.
+	if (Action.NewLabel.IsEmpty())
+	{
+		Result.RefusalCode = TEXT("noop_label");
+		Result.Message = TEXT("Rejected set_actor_label: label was empty.");
+		return Result;
+	}
+
+	const int32 RequestedCount = Action.TargetActors.Num();
+	int32 ChangedCount = 0;
+	for (const TWeakObjectPtr<AActor>& ActorPtr : Action.TargetActors)
+	{
+		AActor* Actor = ActorPtr.Get();
+		if (!IsValid(Actor))
+		{
+			continue;
+		}
+
+		Actor->Modify();
+		// SetActorLabel sets the editor display label; it does not force uniqueness, so
+		// targets may share a label (labels are display-only). The post-mutation summary
+		// reports the resulting label per actor.
+		Actor->SetActorLabel(Action.NewLabel);
+		Actor->MarkPackageDirty();
+		Result.FoundActors.Add(FUE5MCPContextCollector::SummarizeActor(Actor, false));
+		++ChangedCount;
+	}
+
+	Result.ChangedCount = ChangedCount;
+	Result.bSuccess = ChangedCount > 0 && ChangedCount == RequestedCount;
+	Result.Message = Result.bSuccess
+		? FString::Printf(TEXT("set_actor_label succeeded for %d actor(s) -> '%s'"), ChangedCount, *Action.NewLabel)
+		: (ChangedCount == 0
+			? TEXT("set_actor_label found no valid actors to mutate.")
+			: FString::Printf(TEXT("set_actor_label changed %d of %d requested actor(s) -> '%s' (others went stale)"),
+				ChangedCount, RequestedCount, *Action.NewLabel));
+	return Result;
+}
+
+FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteAddActorTags(const FUE5MCPResolvedAction& ResolvedAction)
+{
+	const FUE5MCPAction& Action = ResolvedAction.Action;
+	FUE5MCPActionResult Result;
+	Result.ActionId = Action.Id;
+
+	if (Action.Tags.IsEmpty())
+	{
+		Result.RefusalCode = TEXT("noop_tags");
+		Result.Message = TEXT("Rejected add_actor_tags: no tags were provided.");
+		return Result;
+	}
+
+	const int32 RequestedCount = Action.TargetActors.Num();
+	int32 ValidCount = 0;
+	int32 MutatedCount = 0;
+	for (const TWeakObjectPtr<AActor>& ActorPtr : Action.TargetActors)
+	{
+		AActor* Actor = ActorPtr.Get();
+		if (!IsValid(Actor))
+		{
+			continue;
+		}
+		++ValidCount;
+
+		// Add only the tags the actor does not already carry, so the op is idempotent:
+		// re-adding an existing tag changes nothing and is not counted as a mutation.
+		bool bActorChanged = false;
+		for (const FName& Tag : Action.Tags)
+		{
+			if (!Actor->Tags.Contains(Tag))
+			{
+				if (!bActorChanged)
+				{
+					Actor->Modify();
+					bActorChanged = true;
+				}
+				Actor->Tags.Add(Tag);
+			}
+		}
+		if (bActorChanged)
+		{
+			Actor->MarkPackageDirty();
+			++MutatedCount;
+		}
+		Result.FoundActors.Add(FUE5MCPContextCollector::SummarizeActor(Actor, false));
+	}
+
+	Result.ChangedCount = MutatedCount;
+	// Idempotent success: every requested target resolved to a live actor and now
+	// carries the tags. MutatedCount reports how many actually changed.
+	Result.bSuccess = ValidCount > 0 && ValidCount == RequestedCount;
+	Result.Message = Result.bSuccess
+		? FString::Printf(TEXT("add_actor_tags added %d tag(s) to %d actor(s) (%d already had them)"),
+			Action.Tags.Num(), MutatedCount, ValidCount - MutatedCount)
+		: (ValidCount == 0
+			? TEXT("add_actor_tags found no valid actors to mutate.")
+			: FString::Printf(TEXT("add_actor_tags applied to %d of %d requested actor(s) (others went stale)"),
+				ValidCount, RequestedCount));
+	return Result;
+}
+
+FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteRemoveActorTags(const FUE5MCPResolvedAction& ResolvedAction)
+{
+	const FUE5MCPAction& Action = ResolvedAction.Action;
+	FUE5MCPActionResult Result;
+	Result.ActionId = Action.Id;
+
+	if (Action.Tags.IsEmpty())
+	{
+		Result.RefusalCode = TEXT("noop_tags");
+		Result.Message = TEXT("Rejected remove_actor_tags: no tags were provided.");
+		return Result;
+	}
+
+	const int32 RequestedCount = Action.TargetActors.Num();
+	int32 ValidCount = 0;
+	int32 MutatedCount = 0;
+	for (const TWeakObjectPtr<AActor>& ActorPtr : Action.TargetActors)
+	{
+		AActor* Actor = ActorPtr.Get();
+		if (!IsValid(Actor))
+		{
+			continue;
+		}
+		++ValidCount;
+
+		// Remove only the tags the actor actually carries, so the op is idempotent:
+		// removing an absent tag changes nothing and is not counted as a mutation.
+		bool bActorChanged = false;
+		for (const FName& Tag : Action.Tags)
+		{
+			if (Actor->Tags.Contains(Tag))
+			{
+				if (!bActorChanged)
+				{
+					Actor->Modify();
+					bActorChanged = true;
+				}
+				Actor->Tags.Remove(Tag);
+			}
+		}
+		if (bActorChanged)
+		{
+			Actor->MarkPackageDirty();
+			++MutatedCount;
+		}
+		Result.FoundActors.Add(FUE5MCPContextCollector::SummarizeActor(Actor, false));
+	}
+
+	Result.ChangedCount = MutatedCount;
+	Result.bSuccess = ValidCount > 0 && ValidCount == RequestedCount;
+	Result.Message = Result.bSuccess
+		? FString::Printf(TEXT("remove_actor_tags removed %d tag(s) from %d actor(s) (%d did not have them)"),
+			Action.Tags.Num(), MutatedCount, ValidCount - MutatedCount)
+		: (ValidCount == 0
+			? TEXT("remove_actor_tags found no valid actors to mutate.")
+			: FString::Printf(TEXT("remove_actor_tags applied to %d of %d requested actor(s) (others went stale)"),
+				ValidCount, RequestedCount));
 	return Result;
 }
 

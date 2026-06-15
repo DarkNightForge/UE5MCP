@@ -45,12 +45,20 @@ class ExampleFileTests(unittest.TestCase):
     def test_read_logs_is_valid(self):
         self.assertEqual(validate_plan(load_example("read-logs.json")), [])
 
+    def test_set_actor_label_is_valid(self):
+        self.assertEqual(validate_plan(load_example("set-actor-label.json")), [])
+
+    def test_tag_actors_is_valid(self):
+        self.assertEqual(validate_plan(load_example("tag-actors.json")), [])
+
     def test_invalid_examples_fail_for_documented_rules(self):
         problems = validate_plan(load_example("invalid-empty-targets.json"))
         self.assertIn("R6", rules(problems))
         problems = validate_plan(load_example("invalid-destructive-no-confirmation.json"))
         self.assertIn("R7", rules(problems))
         problems = validate_plan(load_example("invalid-noop-transform.json"))
+        self.assertIn("R9", rules(problems))
+        problems = validate_plan(load_example("invalid-empty-tags.json"))
         self.assertIn("R9", rules(problems))
 
 
@@ -222,6 +230,74 @@ class ReadLogsTests(unittest.TestCase):
         plan["actions"][0]["targets"] = [
             "/Temp/Untitled_1.Untitled_1:PersistentLevel.StaticMeshActor_0"
         ]
+        self.assertIn("R6", rules(validate_plan(plan)))
+
+
+class LabelTests(unittest.TestCase):
+    def label_plan(self, params):
+        plan = load_example("set-actor-label.json")
+        plan["actions"][0]["params"] = params
+        return plan
+
+    def test_label_is_valid(self):
+        self.assertEqual(validate_plan(self.label_plan({"label": "Renamed"})), [])
+
+    def test_missing_label_rejected(self):
+        self.assertIn("R9", rules(validate_plan(self.label_plan({}))))
+
+    def test_empty_label_rejected(self):
+        self.assertIn("R9", rules(validate_plan(self.label_plan({"label": ""}))))
+
+    def test_whitespace_label_rejected(self):
+        self.assertIn("R9", rules(validate_plan(self.label_plan({"label": "   "}))))
+
+    def test_non_string_label_rejected(self):
+        self.assertIn("R9", rules(validate_plan(self.label_plan({"label": 7}))))
+
+    def test_unknown_param_rejected(self):
+        self.assertIn(
+            "R9", rules(validate_plan(self.label_plan({"label": "ok", "tags": ["x"]})))
+        )
+
+    def test_requires_targets(self):
+        plan = self.label_plan({"label": "Renamed"})
+        plan["actions"][0]["targets"] = []
+        self.assertIn("R6", rules(validate_plan(plan)))
+
+
+class TagTests(unittest.TestCase):
+    def tag_plan(self, tool, params):
+        plan = load_example("tag-actors.json")
+        plan["actions"][0]["tool"] = tool
+        plan["actions"][0]["params"] = params
+        return plan
+
+    def test_add_tags_is_valid(self):
+        self.assertEqual(validate_plan(self.tag_plan("add_actor_tags", {"tags": ["Rock"]})), [])
+
+    def test_remove_tags_is_valid(self):
+        self.assertEqual(
+            validate_plan(self.tag_plan("remove_actor_tags", {"tags": ["Rock", "Cleanup"]})), []
+        )
+
+    def test_missing_tags_rejected(self):
+        self.assertIn("R9", rules(validate_plan(self.tag_plan("add_actor_tags", {}))))
+
+    def test_empty_tag_list_rejected(self):
+        self.assertIn("R9", rules(validate_plan(self.tag_plan("add_actor_tags", {"tags": []}))))
+
+    def test_empty_tag_string_rejected(self):
+        self.assertIn("R9", rules(validate_plan(self.tag_plan("add_actor_tags", {"tags": [""]}))))
+
+    def test_non_string_tag_rejected(self):
+        self.assertIn("R9", rules(validate_plan(self.tag_plan("add_actor_tags", {"tags": [1, 2]}))))
+
+    def test_tags_not_a_list_rejected(self):
+        self.assertIn("R9", rules(validate_plan(self.tag_plan("add_actor_tags", {"tags": "Rock"}))))
+
+    def test_requires_targets(self):
+        plan = self.tag_plan("remove_actor_tags", {"tags": ["Rock"]})
+        plan["actions"][0]["targets"] = []
         self.assertIn("R6", rules(validate_plan(plan)))
 
 

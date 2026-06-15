@@ -12,7 +12,8 @@
 // APPROVAL MODEL (mirrors the plugin's risk tiers via tool naming):
 //   read_only   tools (get_selection, find_actors, preview_actions)
 //               → safe to allowlist; never mutate.
-//   low_risk    tools (select_actors, set_actor_folder, set_actor_transform,
+//   low_risk    tools (select_actors, set_actor_folder, set_actor_label,
+//               add_actor_tags, remove_actor_tags, set_actor_transform,
 //               duplicate_actor_with_offset, spawn_actor_from_class)
 //               → the MCP client's native tool-permission prompt is the human
 //                 approval; users may session-allowlist consciously.
@@ -149,6 +150,51 @@ const TOOLS = [
       additionalProperties: false,
     },
     annotations: { title: 'Set outliner folder' },
+  },
+  {
+    name: 'set_actor_label',
+    risk: 'low_risk',
+    description: 'Set the World Outliner display label of these actors (one undoable transaction). Labels are display-only and need not be unique.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        actor_paths: ACTOR_PATHS_SCHEMA,
+        label: { type: 'string', minLength: 1, description: 'New display label, e.g. "Hero Spawn Point".' },
+      },
+      required: ['actor_paths', 'label'],
+      additionalProperties: false,
+    },
+    annotations: { title: 'Set actor label' },
+  },
+  {
+    name: 'add_actor_tags',
+    risk: 'low_risk',
+    description: 'Add one or more actor tags (FName gameplay tags on AActor.Tags) to these actors (one undoable transaction). Idempotent: tags already present are left as-is.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        actor_paths: ACTOR_PATHS_SCHEMA,
+        tags: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1, description: 'Tags to add, e.g. ["Rock", "Cleanup"].' },
+      },
+      required: ['actor_paths', 'tags'],
+      additionalProperties: false,
+    },
+    annotations: { title: 'Add actor tags' },
+  },
+  {
+    name: 'remove_actor_tags',
+    risk: 'low_risk',
+    description: 'Remove one or more actor tags from these actors (one undoable transaction). Idempotent: tags not present are ignored.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        actor_paths: ACTOR_PATHS_SCHEMA,
+        tags: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1, description: 'Tags to remove, e.g. ["Cleanup"].' },
+      },
+      required: ['actor_paths', 'tags'],
+      additionalProperties: false,
+    },
+    annotations: { title: 'Remove actor tags' },
   },
   {
     name: 'set_actor_transform',
@@ -304,6 +350,9 @@ const PLUGIN_TOOL_RISK = {
   read_logs: 'read_only',
   select_actors: 'low_risk',
   set_actor_folder: 'low_risk',
+  set_actor_label: 'low_risk',
+  add_actor_tags: 'low_risk',
+  remove_actor_tags: 'low_risk',
   set_actor_transform: 'low_risk',
   duplicate_actor_with_offset: 'low_risk',
   spawn_actor_from_class: 'low_risk',
@@ -501,6 +550,21 @@ const HANDLERS = {
       [makeAction('set_actor_folder', 'low_risk', args.actor_paths, { folder_path: args.folder_path })]);
   },
 
+  async set_actor_label(args) {
+    return runMutatingPlan(`Set the label of ${args.actor_paths.length} actor(s) to '${args.label}'.`,
+      [makeAction('set_actor_label', 'low_risk', args.actor_paths, { label: args.label })]);
+  },
+
+  async add_actor_tags(args) {
+    return runMutatingPlan(`Add tag(s) [${args.tags}] to ${args.actor_paths.length} actor(s).`,
+      [makeAction('add_actor_tags', 'low_risk', args.actor_paths, { tags: args.tags })]);
+  },
+
+  async remove_actor_tags(args) {
+    return runMutatingPlan(`Remove tag(s) [${args.tags}] from ${args.actor_paths.length} actor(s).`,
+      [makeAction('remove_actor_tags', 'low_risk', args.actor_paths, { tags: args.tags })]);
+  },
+
   async set_actor_transform(args) {
     const params = {};
     for (const key of ['location', 'rotation', 'scale']) {
@@ -568,7 +632,7 @@ async function handleRequest(message) {
           result: {
             protocolVersion,
             capabilities: { tools: {} },
-            serverInfo: { name: 'ue5mcp', version: '0.3.0' },
+            serverInfo: { name: 'ue5mcp', version: '0.4.0' },
             instructions:
               'UE5MCP drives a LIVE Unreal Editor through typed, policy-checked, undoable tool calls. ' +
               'Read tools (get_selection, find_actors, read_logs, preview_actions) are safe and free. Mutating tools are ' +

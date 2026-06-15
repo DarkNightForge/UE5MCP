@@ -79,6 +79,18 @@ FUE5MCPPlanValidationResult FUE5MCPPlanValidator::ValidateAndResolve(const FUE5M
 		{
 			Problems.Add(FString::Printf(TEXT("R9: %s missing required non-empty param 'folder_path'"), *Where));
 		}
+		// A label action with no (or only whitespace) label is a no-op mutation; refuse it.
+		if (Tool->ActionType == EUE5MCPActionType::SetActorLabel && ActionRequest.NewLabel.IsEmpty())
+		{
+			Problems.Add(FString::Printf(TEXT("R9: %s missing required non-empty param 'label'"), *Where));
+		}
+		// Tag add/remove with no tags is a no-op mutation; refuse it (the parser already
+		// dropped empty tag strings, so an empty list here means nothing usable was sent).
+		if ((Tool->ActionType == EUE5MCPActionType::AddActorTags || Tool->ActionType == EUE5MCPActionType::RemoveActorTags)
+			&& ActionRequest.Tags.IsEmpty())
+		{
+			Problems.Add(FString::Printf(TEXT("R9: %s 'tags' must contain at least one non-empty tag"), *Where));
+		}
 		// A transform action that changes nothing is a no-op mutation; refuse it so a
 		// blank set_actor_transform can never occupy the approval slot.
 		if (Tool->ActionType == EUE5MCPActionType::SetActorTransform && ActionRequest.Transform.IsEmpty())
@@ -147,6 +159,8 @@ FUE5MCPPlanValidationResult FUE5MCPPlanValidator::ValidateAndResolve(const FUE5M
 		Resolved.Action.Type = Tool->ActionType;
 		Resolved.Action.Risk = Tool->Risk;
 		Resolved.Action.NewFolderPath = ActionRequest.FolderPath;
+		Resolved.Action.NewLabel = ActionRequest.NewLabel;
+		Resolved.Action.Tags = ActionRequest.Tags;
 		Resolved.Action.FindQuery = ActionRequest.FindQuery;
 		Resolved.Action.ReadLogsQuery = ActionRequest.ReadLogsQuery;
 		Resolved.Action.Transform = ActionRequest.Transform;

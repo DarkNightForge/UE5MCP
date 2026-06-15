@@ -15,6 +15,9 @@ public:
 private:
 	static bool HasMutations(const FUE5MCPValidatedPlan& Plan);
 	static FUE5MCPActionResult ExecuteSetActorFolder(const FUE5MCPResolvedAction& ResolvedAction);
+	static FUE5MCPActionResult ExecuteSetActorLabel(const FUE5MCPResolvedAction& ResolvedAction);
+	static FUE5MCPActionResult ExecuteAddActorTags(const FUE5MCPResolvedAction& ResolvedAction);
+	static FUE5MCPActionResult ExecuteRemoveActorTags(const FUE5MCPResolvedAction& ResolvedAction);
 	static FUE5MCPActionResult ExecuteSetActorTransform(const FUE5MCPResolvedAction& ResolvedAction);
 	static FUE5MCPActionResult ExecuteGetSelectionContext(const FUE5MCPResolvedAction& ResolvedAction);
 	static FUE5MCPActionResult ExecuteFindActors(const FUE5MCPResolvedAction& ResolvedAction);

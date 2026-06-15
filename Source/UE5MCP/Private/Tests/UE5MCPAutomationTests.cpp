@@ -65,6 +65,101 @@ bool FUE5MCPExecutorSetFolderUndoRedoTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPExecutorSetLabelUndoRedoTest,
+	"UE5MCP.Executor.SetLabelAppliesThenUndoRedoReverts", UE5MCPTests::KernelTestFlags)
+bool FUE5MCPExecutorSetLabelUndoRedoTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+	if (!TestNotNull(TEXT("CreateNewMap returned a world"), World))
+	{
+		return false;
+	}
+
+	const TArray<AActor*> Actors = UE5MCPTests::SpawnStaticMeshTestActors(World, 1, TEXT("UE5MCPLabelSource"));
+	TestEqual(TEXT("Spawned one test actor"), Actors.Num(), 1);
+	const FString OriginalLabel = Actors[0]->GetActorLabel();
+
+	const FString NewLabel(TEXT("Hero Spawn Point"));
+	const FUE5MCPExecutionResult Result =
+		FUE5MCPActionExecutor::ExecuteApprovedPlan(UE5MCPTests::BuildSetLabelPlan(Actors, NewLabel));
+
+	TestTrue(TEXT("Execution succeeded"), Result.bSuccess);
+	TestEqual(TEXT("Actor carries the new label"), Actors[0]->GetActorLabel(), NewLabel);
+
+	// The approved batch must revert as a single standard undo step (checklist M9).
+	TestTrue(TEXT("UndoTransaction performed an undo"), GEditor->UndoTransaction());
+	TestEqual(TEXT("Undo restored the original label"), Actors[0]->GetActorLabel(), OriginalLabel);
+
+	// And redo must re-apply it (checklist M10).
+	TestTrue(TEXT("RedoTransaction performed a redo"), GEditor->RedoTransaction());
+	TestEqual(TEXT("Redo re-applied the new label"), Actors[0]->GetActorLabel(), NewLabel);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPExecutorAddRemoveTagsUndoTest,
+	"UE5MCP.Executor.AddThenRemoveTagsWithUndo", UE5MCPTests::KernelTestFlags)
+bool FUE5MCPExecutorAddRemoveTagsUndoTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+	if (!TestNotNull(TEXT("CreateNewMap returned a world"), World))
+	{
+		return false;
+	}
+
+	const TArray<AActor*> Actors = UE5MCPTests::SpawnStaticMeshTestActors(World, 2, TEXT("UE5MCPTagSource"));
+	TestEqual(TEXT("Spawned two test actors"), Actors.Num(), 2);
+
+	const TArray<FName> Tags = { FName(TEXT("Rock")), FName(TEXT("Cleanup")) };
+
+	// --- Add the tags ---
+	const FUE5MCPExecutionResult AddResult =
+		FUE5MCPActionExecutor::ExecuteApprovedPlan(UE5MCPTests::BuildTagsPlan(Actors, EUE5MCPActionType::AddActorTags, Tags));
+	TestTrue(TEXT("Add succeeded"), AddResult.bSuccess);
+	for (const AActor* Actor : Actors)
+	{
+		TestTrue(TEXT("Actor has the 'Rock' tag"), Actor->Tags.Contains(FName(TEXT("Rock"))));
+		TestTrue(TEXT("Actor has the 'Cleanup' tag"), Actor->Tags.Contains(FName(TEXT("Cleanup"))));
+	}
+
+	// --- One undo reverts the whole add batch as a single step (checklist M9) ---
+	TestTrue(TEXT("UndoTransaction performed an undo"), GEditor->UndoTransaction());
+	for (const AActor* Actor : Actors)
+	{
+		TestFalse(TEXT("Undo removed the 'Rock' tag"), Actor->Tags.Contains(FName(TEXT("Rock"))));
+		TestFalse(TEXT("Undo removed the 'Cleanup' tag"), Actor->Tags.Contains(FName(TEXT("Cleanup"))));
+	}
+
+	// --- Redo re-applies it (checklist M10) ---
+	TestTrue(TEXT("RedoTransaction performed a redo"), GEditor->RedoTransaction());
+	for (const AActor* Actor : Actors)
+	{
+		TestTrue(TEXT("Redo restored the 'Rock' tag"), Actor->Tags.Contains(FName(TEXT("Rock"))));
+	}
+
+	// --- Re-adding the same tags is idempotent: success, but nothing changes ---
+	const FUE5MCPExecutionResult ReAddResult =
+		FUE5MCPActionExecutor::ExecuteApprovedPlan(UE5MCPTests::BuildTagsPlan(Actors, EUE5MCPActionType::AddActorTags, Tags));
+	TestTrue(TEXT("Idempotent re-add still reports success"), ReAddResult.bSuccess);
+	if (ReAddResult.ActionResults.Num() == 1)
+	{
+		TestEqual(TEXT("Idempotent re-add mutated nothing"), ReAddResult.ActionResults[0].ChangedCount, 0);
+	}
+
+	// --- Remove one tag; the other is preserved ---
+	const TArray<FName> RemoveTags = { FName(TEXT("Cleanup")) };
+	const FUE5MCPExecutionResult RemoveResult =
+		FUE5MCPActionExecutor::ExecuteApprovedPlan(UE5MCPTests::BuildTagsPlan(Actors, EUE5MCPActionType::RemoveActorTags, RemoveTags));
+	TestTrue(TEXT("Remove succeeded"), RemoveResult.bSuccess);
+	for (const AActor* Actor : Actors)
+	{
+		TestFalse(TEXT("'Cleanup' tag removed"), Actor->Tags.Contains(FName(TEXT("Cleanup"))));
+		TestTrue(TEXT("'Rock' tag preserved"), Actor->Tags.Contains(FName(TEXT("Rock"))));
+	}
+
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPExecutorRejectsUnvalidatedPlanTest,
 	"UE5MCP.Executor.RejectsUnvalidatedPlan", UE5MCPTests::KernelTestFlags)
 bool FUE5MCPExecutorRejectsUnvalidatedPlanTest::RunTest(const FString& Parameters)

@@ -68,6 +68,7 @@ STATIC_MESH_ACTOR_CLASS = "/Script/Engine.StaticMeshActor"
 #   "vec3"  -> array of exactly 3 numbers (bool not a number)
 #   str / int / bool -> the corresponding JSON scalar
 #   "transforms" -> spawn instance array (special-cased)
+#   "names" -> non-empty array of non-empty strings (the 'tags' param)
 # A param being listed does NOT make it required; required params are enforced
 # per-tool below (matching the C++ per-action-type checks).
 REGISTRY = {
@@ -105,6 +106,24 @@ REGISTRY = {
     "set_actor_folder": {
         "risk": LOW_RISK,
         "params": {"folder_path": str},
+        "requires_targets": True,
+        "accepts_targets": True,
+    },
+    "set_actor_label": {
+        "risk": LOW_RISK,
+        "params": {"label": str},
+        "requires_targets": True,
+        "accepts_targets": True,
+    },
+    "add_actor_tags": {
+        "risk": LOW_RISK,
+        "params": {"tags": "names"},
+        "requires_targets": True,
+        "accepts_targets": True,
+    },
+    "remove_actor_tags": {
+        "risk": LOW_RISK,
+        "params": {"tags": "names"},
         "requires_targets": True,
         "accepts_targets": True,
     },
@@ -151,6 +170,16 @@ def _is_vec3(value):
         isinstance(value, list)
         and len(value) == 3
         and all(_is_number(component) for component in value)
+    )
+
+
+def _is_name_list(value):
+    """Non-empty array of non-empty strings — the 'tags' param shape. The C++
+    parser drops empty/whitespace tags, so a usable list needs at least one."""
+    return (
+        isinstance(value, list)
+        and len(value) >= 1
+        and all(isinstance(item, str) and item.strip() for item in value)
     )
 
 
@@ -324,6 +353,11 @@ def validate_plan(plan):
                     )
             elif expected == "transforms":
                 pass  # handled in _validate_spawn
+            elif expected == "names":
+                if not _is_name_list(params[key]):
+                    problems.append(
+                        f"R9: {where} param {key!r} must be a non-empty array of non-empty strings"
+                    )
             elif expected is str:
                 value = params[key]
                 if not isinstance(value, str) or not value.strip():
@@ -348,6 +382,17 @@ def validate_plan(plan):
             if not isinstance(folder, str) or not folder.strip():
                 problems.append(
                     f"R9: {where} missing required non-empty param 'folder_path'"
+                )
+        elif tool == "set_actor_label":
+            label = params.get("label")
+            if not isinstance(label, str) or not label.strip():
+                problems.append(
+                    f"R9: {where} missing required non-empty param 'label'"
+                )
+        elif tool in ("add_actor_tags", "remove_actor_tags"):
+            if not _is_name_list(params.get("tags")):
+                problems.append(
+                    f"R9: {where} 'tags' must contain at least one non-empty tag"
                 )
         elif tool == "set_actor_transform":
             if not any(k in params for k in ("location", "rotation", "scale")):
