@@ -1,5 +1,7 @@
 # UE5MCP roadmap: the capability ladder
 
+For the full current breadth map across Unreal development domains, see [`docs/capabilities/`](capabilities/). This roadmap explains the trust ladder; the capability map explains what surface area exists now, what is missing, and when those docs must be updated.
+
 Capabilities ship one trust level at a time. A capability does not advance because it would demo well; it advances when it passes the gate rubric below. The order is the point: governed growth, not breadth-first.
 
 ## Gate rubric

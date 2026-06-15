@@ -46,3 +46,7 @@ Status reflects evidence on UE 5.7.4. "Evidenced" = observed in a real editor se
 
 - Epic Games Launcher **binary** builds and **Windows** (only UE 5.7.4 Linux source build verified so far).
 - The MCP elicitation confirm dialog has been verified at the protocol level; eyeball the interactive form once per client.
+
+## Documentation drift check
+
+When a change adds/removes/renames a tool, changes a risk tier, changes validation behavior, adds a demo, or verifies a new engine/platform surface, update the living capability map at [`docs/capabilities/`](capabilities/). The capability map is the planning dashboard for current UE5MCP breadth.

@@ -61,7 +61,7 @@ Then:
 3. **Register the MCP server** with your client. For Claude Code, copy the pre-written config from `ClientConfigs/claude-code/` (`.mcp.json` + `settings.json`) into your project, pointing `args` at `Plugins/UE5MCP/MCPServer/ue5mcp-server.mjs`.
 4. **Go.** Open your project, start your agent in the project directory, and ask it to build something. Approve each mutation at the native prompt; Ctrl+Z to unwind.
 
-Full walkthrough: [`docs/demo-live.md`](docs/demo-live.md). Architecture & safety internals: [`docs/architecture.md`](docs/architecture.md).
+Full walkthrough: [`docs/demo-live.md`](docs/demo-live.md). Architecture & safety internals: [`docs/architecture.md`](docs/architecture.md). Current breadth and next capability gaps: [`docs/capabilities/`](docs/capabilities/).
 
 ---
 
@@ -112,6 +112,8 @@ The MCP server holds **no editor capability** — stdio + loopback HTTP only. Tr
 ## Roadmap
 
 The open frontier is **breadth without an open `exec`**. The plan: keep the typed-plan JSON as the only thing the model ever speaks, and grow a **capability registry** via (a) reflection-driven codegen for the native-reflectable surface and (b) vetted **parameterized recipes** (typed params bound as data, never string-concatenated) for the Python-only surface — all funneling through the same validate → preview → transaction → log → refusal pipeline. Plus discovery (`list_capabilities`), domain **skills packs**, and a `read_logs` readback loop. Contributions welcome — this is where the project grows.
+
+The living capability map is [`docs/capabilities/`](docs/capabilities/). Update it whenever a tool, risk tier, validation rule, Unreal domain, demo, or verification scope changes.
 
 ## License
 

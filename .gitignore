@@ -20,6 +20,9 @@ DerivedDataCache/
 .agent-cache/
 **/.claude/settings.local.json
 
+# ── Personal time-tracking (local only, not part of the plugin) ───────────
+.wakatime-project
+
 # ── Build artifacts (generic) ────────────────────────────────────────────
 build/
 dist/
