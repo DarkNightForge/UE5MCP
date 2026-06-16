@@ -165,6 +165,49 @@ bool FUE5MCPJsonParsePackageStatusTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPJsonParseSetPropertyTest,
+	"UE5MCP.Json.ParsesSetPropertyValueKinds", UE5MCPTests::KernelTestFlags)
+bool FUE5MCPJsonParseSetPropertyTest::RunTest(const FString& Parameters)
+{
+	const FString Body = TEXT(R"json({
+		"schema_version": 1,
+		"summary": "Property kinds",
+		"requires_approval": true,
+		"context_fingerprint": { "scene": "DemoScene", "selected_object_paths": ["PersistentLevel.Light_1"] },
+		"actions": [
+			{ "id": "n", "tool": "set_actor_property", "risk": "low_risk", "targets": ["PersistentLevel.Light_1"],
+			  "params": { "component": "/Script/Engine.PointLightComponent", "property": "Intensity", "value": 5000.0 } },
+			{ "id": "c", "tool": "set_actor_property", "risk": "low_risk", "targets": ["PersistentLevel.Light_1"],
+			  "params": { "property": "LightColor", "value": [1, 0.5, 0.25, 1] } },
+			{ "id": "b", "tool": "set_actor_property", "risk": "low_risk", "targets": ["PersistentLevel.Light_1"],
+			  "params": { "property": "bAffectsWorld", "value": true } },
+			{ "id": "s", "tool": "set_actor_property", "risk": "low_risk", "targets": ["PersistentLevel.Light_1"],
+			  "params": { "property": "Tag", "value": "hero" } }
+		]
+	})json");
+
+	FUE5MCPPlanRequest Request;
+	TArray<FString> Errors;
+	TestTrue(TEXT("Envelope parses"), UE5MCPJson::ParsePlanRequest(Body, Request, Errors));
+	TestEqual(TEXT("No parse errors"), Errors.Num(), 0);
+	TestEqual(TEXT("four actions"), Request.Actions.Num(), 4);
+	if (Request.Actions.Num() == 4)
+	{
+		using EKind = FUE5MCPPropertyValue::EKind;
+		TestEqual(TEXT("a0 component"), Request.Actions[0].PropertyComponentClass, FString(TEXT("/Script/Engine.PointLightComponent")));
+		TestTrue(TEXT("a0 number kind"), Request.Actions[0].PropertyValue.Kind == EKind::Number);
+		TestTrue(TEXT("a0 number value"), FMath::IsNearlyEqual(Request.Actions[0].PropertyValue.Number, 5000.0, 0.001));
+		TestTrue(TEXT("a1 color kind"), Request.Actions[1].PropertyValue.Kind == EKind::Color);
+		TestTrue(TEXT("a1 color rgba"), Request.Actions[1].PropertyValue.Color.Equals(FLinearColor(1.0f, 0.5f, 0.25f, 1.0f), 0.001f));
+		TestTrue(TEXT("a2 bool kind"), Request.Actions[2].PropertyValue.Kind == EKind::Bool);
+		TestTrue(TEXT("a2 bool value"), Request.Actions[2].PropertyValue.Bool);
+		TestTrue(TEXT("a3 name kind"), Request.Actions[3].PropertyValue.Kind == EKind::Name);
+		TestEqual(TEXT("a3 name value"), Request.Actions[3].PropertyValue.Name, FString(TEXT("hero")));
+	}
+
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPJsonParseTransformTest,
 	"UE5MCP.Json.ParsesTransformParams", UE5MCPTests::KernelTestFlags)
 bool FUE5MCPJsonParseTransformTest::RunTest(const FString& Parameters)

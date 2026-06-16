@@ -20,4 +20,35 @@ UUE5MCPSettings::UUE5MCPSettings()
 		TEXT("/Engine/BasicShapes/Cone.Cone"),
 		TEXT("/Engine/BasicShapes/Plane.Plane"),
 	};
+
+	// Default property policy: a deliberately tiny, visual-only set on the standard
+	// light components — enough to dim/recolor a light in a demo with preview + undo,
+	// nothing that runs logic or touches assets. Projects widen this consciously.
+	auto FloatEntry = [](const TCHAR* Class, const TCHAR* Prop, double Min, double Max)
+	{
+		FUE5MCPPropertyAllowEntry Entry;
+		Entry.ClassPath = Class;
+		Entry.PropertyName = Prop;
+		Entry.Type = TEXT("float");
+		Entry.bHasRange = true;
+		Entry.Min = Min;
+		Entry.Max = Max;
+		return Entry;
+	};
+	auto ColorEntry = [](const TCHAR* Class, const TCHAR* Prop)
+	{
+		FUE5MCPPropertyAllowEntry Entry;
+		Entry.ClassPath = Class;
+		Entry.PropertyName = Prop;
+		Entry.Type = TEXT("color");
+		return Entry;
+	};
+	PropertyAllowlist = {
+		FloatEntry(TEXT("/Script/Engine.PointLightComponent"), TEXT("Intensity"), 0.0, 1000000.0),
+		FloatEntry(TEXT("/Script/Engine.SpotLightComponent"), TEXT("Intensity"), 0.0, 1000000.0),
+		FloatEntry(TEXT("/Script/Engine.DirectionalLightComponent"), TEXT("Intensity"), 0.0, 150.0),
+		ColorEntry(TEXT("/Script/Engine.PointLightComponent"), TEXT("LightColor")),
+		ColorEntry(TEXT("/Script/Engine.SpotLightComponent"), TEXT("LightColor")),
+		ColorEntry(TEXT("/Script/Engine.DirectionalLightComponent"), TEXT("LightColor")),
+	};
 }

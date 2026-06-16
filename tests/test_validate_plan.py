@@ -54,6 +54,9 @@ class ExampleFileTests(unittest.TestCase):
     def test_package_status_is_valid(self):
         self.assertEqual(validate_plan(load_example("package-status.json")), [])
 
+    def test_set_actor_property_is_valid(self):
+        self.assertEqual(validate_plan(load_example("set-actor-property.json")), [])
+
     def test_invalid_examples_fail_for_documented_rules(self):
         problems = validate_plan(load_example("invalid-empty-targets.json"))
         self.assertIn("R6", rules(problems))
@@ -347,6 +350,48 @@ class PackageStatusTests(unittest.TestCase):
         plan["actions"][0]["targets"] = [
             "/Temp/Untitled_1.Untitled_1:PersistentLevel.StaticMeshActor_0"
         ]
+        self.assertIn("R6", rules(validate_plan(plan)))
+
+
+class SetPropertyTests(unittest.TestCase):
+    def property_plan(self, params):
+        plan = load_example("set-actor-property.json")
+        plan["actions"][0]["params"] = params
+        return plan
+
+    def test_scalar_value_is_valid(self):
+        self.assertEqual(
+            validate_plan(self.property_plan({"property": "Intensity", "value": 5000})), []
+        )
+
+    def test_color_value_is_valid(self):
+        self.assertEqual(
+            validate_plan(self.property_plan({"property": "LightColor", "value": [1, 0.5, 0.2, 1]})), []
+        )
+
+    def test_bool_and_string_values_are_valid(self):
+        self.assertEqual(validate_plan(self.property_plan({"property": "bX", "value": True})), [])
+        self.assertEqual(validate_plan(self.property_plan({"property": "Name", "value": "Foo"})), [])
+
+    def test_missing_property_rejected(self):
+        self.assertIn("R9", rules(validate_plan(self.property_plan({"value": 1}))))
+
+    def test_missing_value_rejected(self):
+        self.assertIn("R9", rules(validate_plan(self.property_plan({"property": "Intensity"}))))
+
+    def test_malformed_value_rejected(self):
+        # an object is not a valid scalar/vector/color/name value
+        self.assertIn("R9", rules(validate_plan(self.property_plan({"property": "X", "value": {"a": 1}}))))
+        # a 2- or 5-element array is neither vector nor rgba
+        self.assertIn("R9", rules(validate_plan(self.property_plan({"property": "X", "value": [1, 2]}))))
+
+    def test_unknown_param_rejected(self):
+        plan = self.property_plan({"property": "Intensity", "value": 1, "units": "lux"})
+        self.assertIn("R9", rules(validate_plan(plan)))
+
+    def test_requires_targets(self):
+        plan = self.property_plan({"property": "Intensity", "value": 1})
+        plan["actions"][0]["targets"] = []
         self.assertIn("R6", rules(validate_plan(plan)))
 
 

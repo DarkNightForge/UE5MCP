@@ -91,6 +91,89 @@ FUE5MCPPlanValidationResult FUE5MCPPlanValidator::ValidateAndResolve(const FUE5M
 		{
 			Problems.Add(FString::Printf(TEXT("R9: %s 'tags' must contain at least one non-empty tag"), *Where));
 		}
+		if (Tool->ActionType == EUE5MCPActionType::SetActorProperty)
+		{
+			if (ActionRequest.PropertyName.IsEmpty())
+			{
+				Problems.Add(FString::Printf(TEXT("R9: %s missing required non-empty param 'property'"), *Where));
+			}
+			if (!ActionRequest.PropertyValue.IsSet())
+			{
+				Problems.Add(FString::Printf(TEXT("R9: %s missing required param 'value'"), *Where));
+			}
+
+			// R12 property policy: only explicitly allowlisted (class, property, type)
+			// tuples may be written, ever. The executor re-checks against the live object;
+			// the validator refuses first with a clear rule and (on a miss) the allowed set.
+			if (!ActionRequest.PropertyName.IsEmpty() && ActionRequest.PropertyValue.IsSet())
+			{
+				const UUE5MCPSettings* Settings = GetDefault<UUE5MCPSettings>();
+				const FUE5MCPPropertyValue::EKind Kind = ActionRequest.PropertyValue.Kind;
+				bool bNameAllowed = false;       // some entry matches name (+ component filter)
+				bool bTypeMatched = false;       // ...and its declared type matches the value kind
+				bool bRangeOk = true;
+				for (const FUE5MCPPropertyAllowEntry& Entry : Settings->PropertyAllowlist)
+				{
+					if (Entry.PropertyName != FName(*ActionRequest.PropertyName))
+					{
+						continue;
+					}
+					if (!ActionRequest.PropertyComponentClass.IsEmpty() && Entry.ClassPath != ActionRequest.PropertyComponentClass)
+					{
+						continue;
+					}
+					bNameAllowed = true;
+
+					const FString& Type = Entry.Type;
+					const bool bKindMatches =
+						((Type == TEXT("float") || Type == TEXT("int")) && Kind == FUE5MCPPropertyValue::EKind::Number) ||
+						(Type == TEXT("bool") && Kind == FUE5MCPPropertyValue::EKind::Bool) ||
+						(Type == TEXT("vector") && Kind == FUE5MCPPropertyValue::EKind::Vector) ||
+						(Type == TEXT("color") && Kind == FUE5MCPPropertyValue::EKind::Color) ||
+						(Type == TEXT("name") && Kind == FUE5MCPPropertyValue::EKind::Name);
+					if (!bKindMatches)
+					{
+						continue;
+					}
+					bTypeMatched = true;
+
+					if (Entry.bHasRange && Kind == FUE5MCPPropertyValue::EKind::Number)
+					{
+						if (ActionRequest.PropertyValue.Number < Entry.Min || ActionRequest.PropertyValue.Number > Entry.Max)
+						{
+							bRangeOk = false;
+						}
+					}
+					if (bTypeMatched && bRangeOk)
+					{
+						break;
+					}
+				}
+
+				if (!bNameAllowed)
+				{
+					TArray<FString> Allowed;
+					for (const FUE5MCPPropertyAllowEntry& Entry : Settings->PropertyAllowlist)
+					{
+						Allowed.AddUnique(FString::Printf(TEXT("%s.%s (%s)"), *Entry.ClassPath, *Entry.PropertyName.ToString(), *Entry.Type));
+					}
+					Problems.Add(FString::Printf(TEXT("R12: %s property '%s'%s is not on the property allowlist. Allowed: %s"),
+						*Where, *ActionRequest.PropertyName,
+						ActionRequest.PropertyComponentClass.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" on '%s'"), *ActionRequest.PropertyComponentClass),
+						Allowed.IsEmpty() ? TEXT("(none configured)") : *FString::Join(Allowed, TEXT("; "))));
+				}
+				else if (!bTypeMatched)
+				{
+					Problems.Add(FString::Printf(TEXT("R12: %s value type does not match the allowlisted type for property '%s'"),
+						*Where, *ActionRequest.PropertyName));
+				}
+				else if (!bRangeOk)
+				{
+					Problems.Add(FString::Printf(TEXT("R12: %s value %g for property '%s' is outside the allowed range"),
+						*Where, ActionRequest.PropertyValue.Number, *ActionRequest.PropertyName));
+				}
+			}
+		}
 		// A transform action that changes nothing is a no-op mutation; refuse it so a
 		// blank set_actor_transform can never occupy the approval slot.
 		if (Tool->ActionType == EUE5MCPActionType::SetActorTransform && ActionRequest.Transform.IsEmpty())
@@ -161,6 +244,9 @@ FUE5MCPPlanValidationResult FUE5MCPPlanValidator::ValidateAndResolve(const FUE5M
 		Resolved.Action.NewFolderPath = ActionRequest.FolderPath;
 		Resolved.Action.NewLabel = ActionRequest.NewLabel;
 		Resolved.Action.Tags = ActionRequest.Tags;
+		Resolved.Action.PropertyName = ActionRequest.PropertyName;
+		Resolved.Action.PropertyComponentClass = ActionRequest.PropertyComponentClass;
+		Resolved.Action.PropertyValue = ActionRequest.PropertyValue;
 		Resolved.Action.FindQuery = ActionRequest.FindQuery;
 		Resolved.Action.ReadLogsQuery = ActionRequest.ReadLogsQuery;
 		Resolved.Action.PackageQuery = ActionRequest.PackageQuery;

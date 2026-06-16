@@ -14,8 +14,9 @@
 //               get_package_status, preview_actions)
 //               → safe to allowlist; never mutate.
 //   low_risk    tools (select_actors, set_actor_folder, set_actor_label,
-//               add_actor_tags, remove_actor_tags, set_actor_transform,
-//               duplicate_actor_with_offset, spawn_actor_from_class)
+//               add_actor_tags, remove_actor_tags, set_actor_property,
+//               set_actor_transform, duplicate_actor_with_offset,
+//               spawn_actor_from_class)
 //               → the MCP client's native tool-permission prompt is the human
 //                 approval; users may session-allowlist consciously.
 //   destructive tools (delete_actor)
@@ -212,6 +213,26 @@ const TOOLS = [
     annotations: { title: 'Remove actor tags' },
   },
   {
+    name: 'set_actor_property',
+    risk: 'low_risk',
+    description: 'Set an ALLOWLISTED property on these actors (or one of their components) to a typed value (one undoable transaction). Only (class, property, type) tuples on the plugin\'s PropertyAllowlist are writable — there is no arbitrary property write; anything else is refused, and the refusal lists what is allowed. Default allowlist covers light Intensity (float) and LightColor (rgba) on the standard light components. The value type must match the allowlisted type.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        actor_paths: ACTOR_PATHS_SCHEMA,
+        property: { type: 'string', minLength: 1, description: 'Reflected property name, e.g. "Intensity" or "LightColor".' },
+        value: {
+          description: 'Typed value matching the allowlisted property type: number (float/int), boolean, string (name), [x,y,z] (vector), or [r,g,b,a] linear 0..1 (color).',
+          type: ['number', 'boolean', 'string', 'array'],
+        },
+        component: { type: 'string', description: 'Optional owning component class path, e.g. "/Script/Engine.PointLightComponent". Omit to target a property on the actor itself; the plugin resolves the unique matching component otherwise.' },
+      },
+      required: ['actor_paths', 'property', 'value'],
+      additionalProperties: false,
+    },
+    annotations: { title: 'Set allowlisted actor property' },
+  },
+  {
     name: 'set_actor_transform',
     risk: 'low_risk',
     description: 'Set absolute transform components on these actors; omitted components stay unchanged (one undoable transaction). Rotation is Euler degrees [roll, pitch, yaw].',
@@ -369,6 +390,7 @@ const PLUGIN_TOOL_RISK = {
   set_actor_label: 'low_risk',
   add_actor_tags: 'low_risk',
   remove_actor_tags: 'low_risk',
+  set_actor_property: 'low_risk',
   set_actor_transform: 'low_risk',
   duplicate_actor_with_offset: 'low_risk',
   spawn_actor_from_class: 'low_risk',
@@ -590,6 +612,13 @@ const HANDLERS = {
       [makeAction('remove_actor_tags', 'low_risk', args.actor_paths, { tags: args.tags })]);
   },
 
+  async set_actor_property(args) {
+    const params = { property: args.property, value: args.value };
+    if (args.component !== undefined) params.component = args.component;
+    return runMutatingPlan(`Set property '${args.property}' on ${args.actor_paths.length} actor(s).`,
+      [makeAction('set_actor_property', 'low_risk', args.actor_paths, params)]);
+  },
+
   async set_actor_transform(args) {
     const params = {};
     for (const key of ['location', 'rotation', 'scale']) {
@@ -657,7 +686,7 @@ async function handleRequest(message) {
           result: {
             protocolVersion,
             capabilities: { tools: {} },
-            serverInfo: { name: 'ue5mcp', version: '0.5.0' },
+            serverInfo: { name: 'ue5mcp', version: '0.6.0' },
             instructions:
               'UE5MCP drives a LIVE Unreal Editor through typed, policy-checked, undoable tool calls. ' +
               'Read tools (get_selection, find_actors, read_logs, get_package_status, preview_actions) are safe and free. Mutating tools are ' +

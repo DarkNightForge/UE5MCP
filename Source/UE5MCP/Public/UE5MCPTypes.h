@@ -18,6 +18,7 @@ enum class EUE5MCPActionType : uint8
 	SetActorLabel,
 	AddActorTags,
 	RemoveActorTags,
+	SetActorProperty,
 	SetActorTransform,
 	DuplicateActorWithOffset,
 	SpawnActorFromClass,
@@ -105,6 +106,24 @@ struct FUE5MCPPackageState
 	FString SourceControlState;
 };
 
+/** A typed value for set_actor_property, tagged by the JSON kind the client sent.
+ *  The validator checks this kind against the allowlist entry's declared type; the
+ *  executor writes it through reflection only after that match holds. */
+struct FUE5MCPPropertyValue
+{
+	enum class EKind : uint8 { None, Number, Bool, Vector, Color, Name };
+
+	EKind Kind = EKind::None;
+	double Number = 0.0;
+	bool Bool = false;
+	FVector Vector = FVector::ZeroVector;
+	/** RGBA, linear [0..1]; converted to FColor (sRGB) when the target property is FColor. */
+	FLinearColor Color = FLinearColor::White;
+	FString Name;
+
+	bool IsSet() const { return Kind != EKind::None; }
+};
+
 /** Optional absolute transform components for set_actor_transform. Each field is
  *  applied only when its bHas* flag is set; unset components are left unchanged.
  *  Rotation is carried as Euler degrees, matching the context pack's rotation output. */
@@ -139,6 +158,11 @@ struct FUE5MCPAction
 	FString NewLabel;
 	/** add_actor_tags / remove_actor_tags tag set (the validator rejects an empty list). */
 	TArray<FName> Tags;
+	/** set_actor_property: target property name, optional owning component class path
+	 *  (empty = the actor itself), and the typed value. */
+	FString PropertyName;
+	FString PropertyComponentClass;
+	FUE5MCPPropertyValue PropertyValue;
 	FUE5MCPFindActorsQuery FindQuery;
 	FUE5MCPReadLogsQuery ReadLogsQuery;
 	FUE5MCPPackageStatusQuery PackageQuery;
@@ -253,6 +277,9 @@ struct FUE5MCPActionRequest
 	FName FolderPath;
 	FString NewLabel;
 	TArray<FName> Tags;
+	FString PropertyName;
+	FString PropertyComponentClass;
+	FUE5MCPPropertyValue PropertyValue;
 	FUE5MCPFindActorsQuery FindQuery;
 	FUE5MCPReadLogsQuery ReadLogsQuery;
 	FUE5MCPPackageStatusQuery PackageQuery;

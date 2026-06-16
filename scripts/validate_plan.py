@@ -69,6 +69,7 @@ STATIC_MESH_ACTOR_CLASS = "/Script/Engine.StaticMeshActor"
 #   str / int / bool -> the corresponding JSON scalar
 #   "transforms" -> spawn instance array (special-cased)
 #   "names" -> non-empty array of non-empty strings (the 'tags' param)
+#   "propvalue" -> set_actor_property value: number/bool/string/array-3-or-4
 # A param being listed does NOT make it required; required params are enforced
 # per-tool below (matching the C++ per-action-type checks).
 REGISTRY = {
@@ -133,6 +134,14 @@ REGISTRY = {
         "requires_targets": True,
         "accepts_targets": True,
     },
+    "set_actor_property": {
+        "risk": LOW_RISK,
+        # property allowlist (R12: class/property/type/range) is project config and is
+        # enforced RUNTIME-ONLY by the C++ validator + executor — not mirrored here.
+        "params": {"property": str, "value": "propvalue", "component": str},
+        "requires_targets": True,
+        "accepts_targets": True,
+    },
     "set_actor_transform": {
         "risk": LOW_RISK,
         "params": {"location": "vec3", "rotation": "vec3", "scale": "vec3"},
@@ -187,6 +196,21 @@ def _is_name_list(value):
         and len(value) >= 1
         and all(isinstance(item, str) and item.strip() for item in value)
     )
+
+
+def _is_property_value(value):
+    """The 'value' param of set_actor_property: number (not bool), bool, string, or
+    an array of 3 (vector) or 4 (rgba) numbers. The declared-type match against the
+    project property allowlist is a RUNTIME check, not decidable offline."""
+    if isinstance(value, bool):
+        return True
+    if isinstance(value, (int, float)):
+        return True
+    if isinstance(value, str):
+        return True
+    if isinstance(value, list) and len(value) in (3, 4):
+        return all(_is_number(component) for component in value)
+    return False
 
 
 def _validate_spawn(where, action, params, problems):
@@ -364,6 +388,11 @@ def validate_plan(plan):
                     problems.append(
                         f"R9: {where} param {key!r} must be a non-empty array of non-empty strings"
                     )
+            elif expected == "propvalue":
+                if not _is_property_value(params[key]):
+                    problems.append(
+                        f"R9: {where} param {key!r} must be a number, bool, string, or array of 3/4 numbers"
+                    )
             elif expected is str:
                 value = params[key]
                 if not isinstance(value, str) or not value.strip():
@@ -400,6 +429,14 @@ def validate_plan(plan):
                 problems.append(
                     f"R9: {where} 'tags' must contain at least one non-empty tag"
                 )
+        elif tool == "set_actor_property":
+            prop = params.get("property")
+            if not isinstance(prop, str) or not prop.strip():
+                problems.append(
+                    f"R9: {where} missing required non-empty param 'property'"
+                )
+            if "value" not in params:
+                problems.append(f"R9: {where} missing required param 'value'")
         elif tool == "set_actor_transform":
             if not any(k in params for k in ("location", "rotation", "scale")):
                 problems.append(

@@ -2,9 +2,11 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "Components/PointLightComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "CoreMinimal.h"
 #include "Editor.h"
+#include "Engine/PointLight.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
@@ -214,6 +216,82 @@ bool FUE5MCPExecutorPackageStatusTest::RunTest(const FString& Parameters)
 	}
 	TestTrue(TEXT("Message reports the read-only readback"),
 		UE5MCPTests::LogLinesContain(Result.UserVisibleLogLines, TEXT("get_package_status")));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPExecutorSetPropertyUndoAndRefusalTest,
+	"UE5MCP.Executor.SetAllowlistedPropertyUndoAndRefusesNonAllowlisted", UE5MCPTests::KernelTestFlags)
+bool FUE5MCPExecutorSetPropertyUndoAndRefusalTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+	if (!TestNotNull(TEXT("CreateNewMap returned a world"), World))
+	{
+		return false;
+	}
+
+	APointLight* Light = World->SpawnActor<APointLight>();
+	if (!TestNotNull(TEXT("Spawned a point light"), Light))
+	{
+		return false;
+	}
+	UPointLightComponent* Comp = Cast<UPointLightComponent>(Light->GetLightComponent());
+	if (!TestNotNull(TEXT("Point light has a light component"), Comp))
+	{
+		return false;
+	}
+	const float OriginalIntensity = Comp->Intensity;
+	const float NewIntensity = OriginalIntensity + 1234.0f; // distinct, in [0, 1e6]
+
+	auto BuildSetIntensity = [Light](double Value)
+	{
+		FUE5MCPResolvedAction Resolved;
+		Resolved.Action.Id = TEXT("test-set-property");
+		Resolved.Action.Type = EUE5MCPActionType::SetActorProperty;
+		Resolved.Action.Risk = EUE5MCPRiskLevel::LowMutation;
+		Resolved.Action.PropertyName = TEXT("Intensity");
+		Resolved.Action.PropertyComponentClass = TEXT("/Script/Engine.PointLightComponent");
+		Resolved.Action.PropertyValue.Kind = FUE5MCPPropertyValue::EKind::Number;
+		Resolved.Action.PropertyValue.Number = Value;
+		Resolved.Action.TargetActors.Add(Light);
+		return UE5MCPTests::WrapPlanForTest(Resolved);
+	};
+
+	// --- Allowlisted write applies ---
+	const FUE5MCPExecutionResult SetResult =
+		FUE5MCPActionExecutor::ExecuteApprovedPlan(BuildSetIntensity(NewIntensity));
+	TestTrue(TEXT("Allowlisted property write succeeded"), SetResult.bSuccess);
+	TestTrue(TEXT("Intensity updated to the new value"), FMath::IsNearlyEqual(Comp->Intensity, NewIntensity, 0.01f));
+
+	// --- One undo reverts it ---
+	TestTrue(TEXT("UndoTransaction performed an undo"), GEditor->UndoTransaction());
+	TestTrue(TEXT("Undo restored the original intensity"), FMath::IsNearlyEqual(Comp->Intensity, OriginalIntensity, 0.01f));
+
+	// --- Redo re-applies it ---
+	TestTrue(TEXT("RedoTransaction performed a redo"), GEditor->RedoTransaction());
+	TestTrue(TEXT("Redo re-applied the new intensity"), FMath::IsNearlyEqual(Comp->Intensity, NewIntensity, 0.01f));
+
+	// --- A non-allowlisted property is refused (the safety boundary) ---
+	FUE5MCPResolvedAction Bad;
+	Bad.Action.Id = TEXT("test-set-property-bad");
+	Bad.Action.Type = EUE5MCPActionType::SetActorProperty;
+	Bad.Action.Risk = EUE5MCPRiskLevel::LowMutation;
+	Bad.Action.PropertyName = TEXT("AttenuationRadius"); // real property, NOT allowlisted
+	Bad.Action.PropertyComponentClass = TEXT("/Script/Engine.PointLightComponent");
+	Bad.Action.PropertyValue.Kind = FUE5MCPPropertyValue::EKind::Number;
+	Bad.Action.PropertyValue.Number = 100.0;
+	Bad.Action.TargetActors.Add(Light);
+	const float RadiusBefore = Comp->AttenuationRadius;
+	const FUE5MCPExecutionResult BadResult =
+		FUE5MCPActionExecutor::ExecuteApprovedPlan(UE5MCPTests::WrapPlanForTest(Bad));
+	TestFalse(TEXT("Non-allowlisted property write refused"), BadResult.bSuccess);
+	if (BadResult.ActionResults.Num() == 1)
+	{
+		TestEqual(TEXT("Refusal code is property_not_allowlisted"),
+			BadResult.ActionResults[0].RefusalCode, FString(TEXT("property_not_allowlisted")));
+	}
+	TestTrue(TEXT("Non-allowlisted property was left unchanged"),
+		FMath::IsNearlyEqual(Comp->AttenuationRadius, RadiusBefore, 0.01f));
 
 	return true;
 }

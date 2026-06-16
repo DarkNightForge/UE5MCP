@@ -67,10 +67,10 @@ Full walkthrough: [`docs/demo-live.md`](docs/demo-live.md). Architecture & safet
 
 ## The tools
 
-Fourteen MCP tools (`mcp__ue5mcp__*`), in three risk tiers:
+Fifteen MCP tools (`mcp__ue5mcp__*`), in three risk tiers:
 
 **Read-only** — `get_selection`, `find_actors`, `read_logs`, `get_package_status`, `preview_actions`
-**Low mutation** — `select_actors`, `set_actor_folder`, `set_actor_label`, `add_actor_tags`, `remove_actor_tags`, `set_actor_transform`, `duplicate_actor_with_offset`, `spawn_actor_from_class` (class + mesh allowlisted)
+**Low mutation** — `select_actors`, `set_actor_folder`, `set_actor_label`, `add_actor_tags`, `remove_actor_tags`, `set_actor_property` (allowlisted), `set_actor_transform`, `duplicate_actor_with_offset`, `spawn_actor_from_class` (class + mesh allowlisted)
 **Destructive** — `delete_actor`
 
 Mutating tools take a **typed action plan**; the plugin resolves targets, builds a human-readable preview (exact targets, counts, warnings), executes only on approval, wraps the batch in one transaction, and logs the result.

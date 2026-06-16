@@ -6,6 +6,40 @@
 #include "Engine/DeveloperSettings.h"
 #include "UE5MCPSettings.generated.h"
 
+/** One allowlisted property the `set_actor_property` tool may write. A property is
+ *  writable ONLY if a matching entry exists here — there is no implicit/arbitrary
+ *  property write. The owning class may be an actor class or a component class;
+ *  the target object must be (or, for a component class, contain) that class. */
+USTRUCT()
+struct FUE5MCPPropertyAllowEntry
+{
+	GENERATED_BODY()
+
+	/** Owning class path: an actor class, or a component class found on the target.
+	 *  e.g. "/Script/Engine.PointLightComponent". */
+	UPROPERTY(config, EditAnywhere, Category = "Property Policy")
+	FString ClassPath;
+
+	/** Reflected property name on that class (or inherited), e.g. "Intensity". */
+	UPROPERTY(config, EditAnywhere, Category = "Property Policy")
+	FName PropertyName;
+
+	/** Declared value type — one of: float, int, bool, vector, color, name. The
+	 *  validator/executor refuse a value whose JSON kind does not match this. */
+	UPROPERTY(config, EditAnywhere, Category = "Property Policy")
+	FString Type;
+
+	/** Optional inclusive numeric range for float/int (ignored for other types). */
+	UPROPERTY(config, EditAnywhere, Category = "Property Policy")
+	bool bHasRange = false;
+
+	UPROPERTY(config, EditAnywhere, Category = "Property Policy", meta = (EditCondition = "bHasRange"))
+	double Min = 0.0;
+
+	UPROPERTY(config, EditAnywhere, Category = "Property Policy", meta = (EditCondition = "bHasRange"))
+	double Max = 0.0;
+};
+
 /** Project settings for the UE5MCP tool host (Project Settings > Plugins > UE5MCP). */
 UCLASS(config = Editor, defaultconfig, meta = (DisplayName = "UE5MCP"))
 class UUE5MCPSettings : public UDeveloperSettings
@@ -56,4 +90,10 @@ public:
 	 *  spawned StaticMeshActor. */
 	UPROPERTY(config, EditAnywhere, Category = "Spawn Policy")
 	TArray<FString> SpawnMeshAllowlist;
+
+	/** Exact (class, property, type) tuples set_actor_property may write. Anything not
+	 *  listed here is refused by the validator AND re-checked by the executor — there is
+	 *  no arbitrary property write. Projects widen this consciously, never implicitly. */
+	UPROPERTY(config, EditAnywhere, Category = "Property Policy")
+	TArray<FUE5MCPPropertyAllowEntry> PropertyAllowlist;
 };

@@ -23,6 +23,8 @@ const TArray<FUE5MCPToolDescriptor>& FUE5MCPToolRegistry::GetTools()
 			{ TEXT("tags") }, /*bRequiresTargets=*/true },
 		{ TEXT("remove_actor_tags"), EUE5MCPActionType::RemoveActorTags, EUE5MCPRiskLevel::LowMutation,
 			{ TEXT("tags") }, /*bRequiresTargets=*/true },
+		{ TEXT("set_actor_property"), EUE5MCPActionType::SetActorProperty, EUE5MCPRiskLevel::LowMutation,
+			{ TEXT("property"), TEXT("value"), TEXT("component") }, /*bRequiresTargets=*/true },
 		{ TEXT("set_actor_transform"), EUE5MCPActionType::SetActorTransform, EUE5MCPRiskLevel::LowMutation,
 			{ TEXT("location"), TEXT("rotation"), TEXT("scale") }, /*bRequiresTargets=*/true },
 		{ TEXT("duplicate_actor_with_offset"), EUE5MCPActionType::DuplicateActorWithOffset, EUE5MCPRiskLevel::LowMutation,

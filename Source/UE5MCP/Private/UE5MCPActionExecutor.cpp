@@ -3,6 +3,7 @@
 #include "UE5MCPActionExecutor.h"
 
 #include "ScopedTransaction.h"
+#include "Components/ActorComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Editor.h"
@@ -17,6 +18,7 @@
 #include "SourceControlHelpers.h"
 #include "Subsystems/EditorActorSubsystem.h"
 #include "UObject/Package.h"
+#include "UObject/UnrealType.h"
 #include "UObject/UObjectIterator.h"
 #include "UE5MCPContextCollector.h"
 #include "UE5MCPEditorService.h"
@@ -69,6 +71,9 @@ FUE5MCPExecutionResult FUE5MCPActionExecutor::ExecuteApprovedPlan(const FUE5MCPV
 			break;
 		case EUE5MCPActionType::RemoveActorTags:
 			ActionResult = ExecuteRemoveActorTags(ResolvedAction);
+			break;
+		case EUE5MCPActionType::SetActorProperty:
+			ActionResult = ExecuteSetActorProperty(ResolvedAction);
 			break;
 		case EUE5MCPActionType::SetActorTransform:
 			ActionResult = ExecuteSetActorTransform(ResolvedAction);
@@ -154,6 +159,7 @@ bool FUE5MCPActionExecutor::HasMutations(const FUE5MCPValidatedPlan& Plan)
 			ResolvedAction.Action.Type == EUE5MCPActionType::SetActorLabel ||
 			ResolvedAction.Action.Type == EUE5MCPActionType::AddActorTags ||
 			ResolvedAction.Action.Type == EUE5MCPActionType::RemoveActorTags ||
+			ResolvedAction.Action.Type == EUE5MCPActionType::SetActorProperty ||
 			ResolvedAction.Action.Type == EUE5MCPActionType::SelectActors ||
 			ResolvedAction.Action.Type == EUE5MCPActionType::SetActorTransform ||
 			ResolvedAction.Action.Type == EUE5MCPActionType::DuplicateActorWithOffset ||
@@ -372,6 +378,253 @@ FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteRemoveActorTags(const FUE5MCPR
 			? TEXT("remove_actor_tags found no valid actors to mutate.")
 			: FString::Printf(TEXT("remove_actor_tags applied to %d of %d requested actor(s) (others went stale)"),
 				ValidCount, RequestedCount));
+	return Result;
+}
+
+namespace
+{
+	UClass* ResolveClassByPath(const FString& Path)
+	{
+		if (Path.IsEmpty())
+		{
+			return nullptr;
+		}
+		if (UClass* Found = FindObject<UClass>(nullptr, *Path))
+		{
+			return Found;
+		}
+		return LoadObject<UClass>(nullptr, *Path);
+	}
+
+	FString PropertyValueToText(const FProperty* Prop, const void* ValuePtr)
+	{
+		FString Out;
+		Prop->ExportTextItem_Direct(Out, ValuePtr, /*DefaultValue=*/nullptr, /*Parent=*/nullptr, PPF_None);
+		return Out;
+	}
+
+	/** Type-safe reflection write. Returns true if the value was written; on a type
+	 *  mismatch returns false and sets OutRefusal (the allowlist already vetted the
+	 *  declared type, but the executor never trusts the plan to match the live class). */
+	bool WritePropertyValue(const FProperty* Prop, void* ValuePtr, const FUE5MCPPropertyValue& Value, FString& OutRefusal)
+	{
+		using EKind = FUE5MCPPropertyValue::EKind;
+		switch (Value.Kind)
+		{
+		case EKind::Number:
+			if (const FFloatProperty* P = CastField<FFloatProperty>(Prop)) { P->SetPropertyValue(ValuePtr, static_cast<float>(Value.Number)); return true; }
+			if (const FDoubleProperty* P = CastField<FDoubleProperty>(Prop)) { P->SetPropertyValue(ValuePtr, Value.Number); return true; }
+			if (const FIntProperty* P = CastField<FIntProperty>(Prop)) { P->SetPropertyValue(ValuePtr, static_cast<int32>(Value.Number)); return true; }
+			if (const FInt64Property* P = CastField<FInt64Property>(Prop)) { P->SetPropertyValue(ValuePtr, static_cast<int64>(Value.Number)); return true; }
+			break;
+		case EKind::Bool:
+			if (const FBoolProperty* P = CastField<FBoolProperty>(Prop)) { P->SetPropertyValue(ValuePtr, Value.Bool); return true; }
+			break;
+		case EKind::Vector:
+			if (const FStructProperty* P = CastField<FStructProperty>(Prop))
+			{
+				if (P->Struct == TBaseStructure<FVector>::Get()) { *static_cast<FVector*>(ValuePtr) = Value.Vector; return true; }
+			}
+			break;
+		case EKind::Color:
+			if (const FStructProperty* P = CastField<FStructProperty>(Prop))
+			{
+				if (P->Struct == TBaseStructure<FLinearColor>::Get()) { *static_cast<FLinearColor*>(ValuePtr) = Value.Color; return true; }
+				if (P->Struct == TBaseStructure<FColor>::Get()) { *static_cast<FColor*>(ValuePtr) = Value.Color.ToFColor(/*bSRGB=*/true); return true; }
+			}
+			break;
+		case EKind::Name:
+			if (const FNameProperty* P = CastField<FNameProperty>(Prop)) { P->SetPropertyValue(ValuePtr, FName(*Value.Name)); return true; }
+			if (const FStrProperty* P = CastField<FStrProperty>(Prop)) { P->SetPropertyValue(ValuePtr, Value.Name); return true; }
+			break;
+		default:
+			break;
+		}
+		OutRefusal = TEXT("property_type_mismatch");
+		return false;
+	}
+}
+
+FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteSetActorProperty(const FUE5MCPResolvedAction& ResolvedAction)
+{
+	const FUE5MCPAction& Action = ResolvedAction.Action;
+	FUE5MCPActionResult Result;
+	Result.ActionId = Action.Id;
+
+	// No-op / shape guard (defence in depth): the validator already refuses these.
+	if (Action.PropertyName.IsEmpty() || !Action.PropertyValue.IsSet())
+	{
+		Result.RefusalCode = TEXT("invalid_property_request");
+		Result.Message = TEXT("Rejected set_actor_property: requires a non-empty 'property' and a 'value'.");
+		return Result;
+	}
+
+	using EKind = FUE5MCPPropertyValue::EKind;
+	const EKind Kind = Action.PropertyValue.Kind;
+	const FName PropName(*Action.PropertyName);
+
+	// Re-derive the allowlist candidates (defence in depth — never trust the plan to
+	// have been validated). A candidate matches by name, the optional component filter,
+	// the declared type vs the value kind, and the optional range.
+	const UUE5MCPSettings* Settings = GetDefault<UUE5MCPSettings>();
+	TArray<FUE5MCPPropertyAllowEntry> Candidates;
+	bool bNameAllowed = false;
+	for (const FUE5MCPPropertyAllowEntry& Entry : Settings->PropertyAllowlist)
+	{
+		if (Entry.PropertyName != PropName)
+		{
+			continue;
+		}
+		if (!Action.PropertyComponentClass.IsEmpty() && Entry.ClassPath != Action.PropertyComponentClass)
+		{
+			continue;
+		}
+		bNameAllowed = true;
+
+		const FString& Type = Entry.Type;
+		const bool bKindMatches =
+			((Type == TEXT("float") || Type == TEXT("int")) && Kind == EKind::Number) ||
+			(Type == TEXT("bool") && Kind == EKind::Bool) ||
+			(Type == TEXT("vector") && Kind == EKind::Vector) ||
+			(Type == TEXT("color") && Kind == EKind::Color) ||
+			(Type == TEXT("name") && Kind == EKind::Name);
+		if (!bKindMatches)
+		{
+			continue;
+		}
+		if (Entry.bHasRange && Kind == EKind::Number &&
+			(Action.PropertyValue.Number < Entry.Min || Action.PropertyValue.Number > Entry.Max))
+		{
+			Result.RefusalCode = TEXT("property_value_out_of_range");
+			Result.Message = FString::Printf(TEXT("Rejected set_actor_property: value %g for '%s' is outside the allowed range [%g, %g]."),
+				Action.PropertyValue.Number, *Action.PropertyName, Entry.Min, Entry.Max);
+			return Result;
+		}
+		Candidates.Add(Entry);
+	}
+	if (!bNameAllowed)
+	{
+		Result.RefusalCode = TEXT("property_not_allowlisted");
+		Result.Message = FString::Printf(TEXT("Rejected set_actor_property: property '%s' is not on the property allowlist."), *Action.PropertyName);
+		return Result;
+	}
+	if (Candidates.IsEmpty())
+	{
+		Result.RefusalCode = TEXT("property_type_mismatch");
+		Result.Message = FString::Printf(TEXT("Rejected set_actor_property: the value type does not match the allowlisted type for '%s'."), *Action.PropertyName);
+		return Result;
+	}
+
+	const int32 RequestedCount = Action.TargetActors.Num();
+	int32 ResolvedCount = 0;
+	int32 ChangedCount = 0;
+	int32 ComponentMisses = 0;
+	TArray<FString> ChangeRows;
+	for (const TWeakObjectPtr<AActor>& ActorPtr : Action.TargetActors)
+	{
+		AActor* Actor = ActorPtr.Get();
+		if (!IsValid(Actor))
+		{
+			continue;
+		}
+
+		// Resolve the owning object from the candidates: an actor the target IS, or a
+		// unique component of the candidate's class on the target.
+		UObject* Owner = nullptr;
+		bool bAmbiguous = false;
+		for (const FUE5MCPPropertyAllowEntry& Entry : Candidates)
+		{
+			UClass* OwnerClass = ResolveClassByPath(Entry.ClassPath);
+			if (!OwnerClass)
+			{
+				continue;
+			}
+			if (OwnerClass->IsChildOf(AActor::StaticClass()))
+			{
+				if (Actor->IsA(OwnerClass))
+				{
+					if (Owner && Owner != Actor) { bAmbiguous = true; }
+					Owner = Actor;
+				}
+			}
+			else if (OwnerClass->IsChildOf(UActorComponent::StaticClass()))
+			{
+				TArray<UActorComponent*> Components;
+				Actor->GetComponents(OwnerClass, Components);
+				if (Components.Num() == 1)
+				{
+					if (Owner && Owner != Components[0]) { bAmbiguous = true; }
+					Owner = Components[0];
+				}
+				else if (Components.Num() > 1)
+				{
+					bAmbiguous = true;
+				}
+			}
+		}
+		if (bAmbiguous)
+		{
+			++ComponentMisses;
+			ChangeRows.Add(FString::Printf(TEXT("%s: ambiguous owner (more than one matching component)"), *Actor->GetActorLabel()));
+			continue;
+		}
+		if (!Owner)
+		{
+			++ComponentMisses;
+			ChangeRows.Add(FString::Printf(TEXT("%s: no matching owner component/class found"), *Actor->GetActorLabel()));
+			continue;
+		}
+
+		FProperty* Prop = FindFProperty<FProperty>(Owner->GetClass(), PropName);
+		if (!Prop)
+		{
+			++ComponentMisses;
+			ChangeRows.Add(FString::Printf(TEXT("%s: property '%s' not found on %s"), *Actor->GetActorLabel(), *Action.PropertyName, *Owner->GetClass()->GetName()));
+			continue;
+		}
+
+		void* ValuePtr = Prop->ContainerPtrToValuePtr<void>(Owner);
+		const FString Before = PropertyValueToText(Prop, ValuePtr);
+
+		Actor->Modify();
+		Owner->Modify();
+		Owner->PreEditChange(Prop);
+		FString WriteRefusal;
+		if (!WritePropertyValue(Prop, ValuePtr, Action.PropertyValue, WriteRefusal))
+		{
+			// Type mismatch against the LIVE property (e.g. allowlist type drifted from the
+			// real class). Refuse the whole action — this is a malformed/misconfigured request.
+			Result.RefusalCode = WriteRefusal;
+			Result.Message = FString::Printf(TEXT("Rejected set_actor_property: '%s' on %s is not a writable %s of the requested kind."),
+				*Action.PropertyName, *Owner->GetClass()->GetName(),
+				*Prop->GetClass()->GetName());
+			return Result;
+		}
+		FPropertyChangedEvent ChangeEvent(Prop);
+		Owner->PostEditChangeProperty(ChangeEvent);
+
+		const FString After = PropertyValueToText(Prop, ValuePtr);
+		Owner->MarkPackageDirty();
+		++ResolvedCount;
+		if (Before != After)
+		{
+			++ChangedCount;
+		}
+		ChangeRows.Add(FString::Printf(TEXT("%s [%s.%s]: %s -> %s"),
+			*Actor->GetActorLabel(), *Owner->GetClass()->GetName(), *Action.PropertyName, *Before, *After));
+	}
+
+	Result.ChangedCount = ChangedCount;
+	Result.bSuccess = ResolvedCount > 0 && ResolvedCount == RequestedCount;
+	const FString Detail = ChangeRows.IsEmpty() ? FString() : (TEXT("\n  ") + FString::Join(ChangeRows, TEXT("\n  ")));
+	Result.Message = Result.bSuccess
+		? FString::Printf(TEXT("set_actor_property '%s' applied to %d actor(s) (%d changed)%s"),
+			*Action.PropertyName, ResolvedCount, ChangedCount, *Detail)
+		: (ResolvedCount == 0
+			? FString::Printf(TEXT("set_actor_property '%s' resolved no writable owner on %d requested actor(s)%s"),
+				*Action.PropertyName, RequestedCount, *Detail)
+			: FString::Printf(TEXT("set_actor_property '%s' applied to %d of %d requested actor(s) (%d missed owner/property)%s"),
+				*Action.PropertyName, ResolvedCount, RequestedCount, ComponentMisses, *Detail));
 	return Result;
 }
 

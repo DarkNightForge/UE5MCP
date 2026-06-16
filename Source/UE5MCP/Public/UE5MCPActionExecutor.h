@@ -18,6 +18,7 @@ private:
 	static FUE5MCPActionResult ExecuteSetActorLabel(const FUE5MCPResolvedAction& ResolvedAction);
 	static FUE5MCPActionResult ExecuteAddActorTags(const FUE5MCPResolvedAction& ResolvedAction);
 	static FUE5MCPActionResult ExecuteRemoveActorTags(const FUE5MCPResolvedAction& ResolvedAction);
+	static FUE5MCPActionResult ExecuteSetActorProperty(const FUE5MCPResolvedAction& ResolvedAction);
 	static FUE5MCPActionResult ExecuteSetActorTransform(const FUE5MCPResolvedAction& ResolvedAction);
 	static FUE5MCPActionResult ExecuteGetSelectionContext(const FUE5MCPResolvedAction& ResolvedAction);
 	static FUE5MCPActionResult ExecuteFindActors(const FUE5MCPResolvedAction& ResolvedAction);

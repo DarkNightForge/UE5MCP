@@ -42,7 +42,7 @@ registry, and a plan declaring a different risk for a tool is invalid (R4).
 
 ## Tool registry (v1)
 
-These are the 13 tools in `FUE5MCPToolRegistry::GetTools()`
+These are the 14 tools in `FUE5MCPToolRegistry::GetTools()`
 (`Source/UE5MCP/Private/UE5MCPToolRegistry.cpp`). The `tool` field of every plan
 action MUST be one of these names. Param keys are exactly those parsed in
 `Source/UE5MCP/Private/UE5MCPJson.cpp`.
@@ -58,6 +58,7 @@ action MUST be one of these names. Param keys are exactly those parsed in
 | `set_actor_label` | `low_risk` | required | `label: string` (required, non-empty) | Sets the editor display label of each target; labels are display-only and need not be unique; an empty/whitespace label is a refused no-op |
 | `add_actor_tags` | `low_risk` | required | `tags: [string,…]` (required, ≥1 non-empty) | Adds the tags to each target's `AActor.Tags`; idempotent (tags already present are left as-is); an empty list is a refused no-op |
 | `remove_actor_tags` | `low_risk` | required | `tags: [string,…]` (required, ≥1 non-empty) | Removes the tags from each target's `AActor.Tags`; idempotent (tags not present are ignored); an empty list is a refused no-op |
+| `set_actor_property` | `low_risk` | required | `property: string` (required), `value` (required; number/bool/string/`[x,y,z]`/`[r,g,b,a]`), `component?: string` (owning component class path) | Writes one **allowlisted** property (R12) on each target or one of its components via reflection. `value` kind must match the allowlisted type. Type-safe, previewed before→after, one undoable transaction. Refuses anything not on `PropertyAllowlist` (the refusal lists what is allowed) |
 | `set_actor_transform` | `low_risk` | required | `location?: [x,y,z]`, `rotation?: [roll,pitch,yaw]`, `scale?: [x,y,z]` | Sets absolute transform components; omitted components stay unchanged; **≥1 component required** (an empty transform is a refused no-op) |
 | `duplicate_actor_with_offset` | `low_risk` | required | `offset: [x,y,z]` (required) | Duplicates each target once at source location + offset; returns the new actor paths |
 | `spawn_actor_from_class` | `low_risk` | rejected | `class_path: string` (required), `transforms: [instance,…]` (required, ≥1), `static_mesh?: string`, `label_base?: string` | Spawns ≤25 instances of an **allowlisted** class via `UWorld::SpawnActor` with `RF_Transactional`; returns the new actor paths |
@@ -101,6 +102,7 @@ do not:
 | `set_actor_label` | `low_risk` | registry `set_actor_label` | takes `label` |
 | `add_actor_tags` | `low_risk` | registry `add_actor_tags` | takes `tags` (string array) |
 | `remove_actor_tags` | `low_risk` | registry `remove_actor_tags` | takes `tags` (string array) |
+| `set_actor_property` | `low_risk` | registry `set_actor_property` | takes `property`, `value`, optional `component` |
 | `set_actor_transform` | `low_risk` | registry `set_actor_transform` | |
 | `duplicate_actor_with_offset` | `low_risk` | registry `duplicate_actor_with_offset` | |
 | `spawn_actor_from_class` | `low_risk` | registry `spawn_actor_from_class` | |
@@ -166,12 +168,13 @@ violated.
 | R3 | Every `tool` exists in the registry |
 | R4 | Every action's `risk` equals the registry risk for its tool |
 | R5 | If any action mutates (risk ≠ `read_only`), `requires_approval` must be `true` |
-| R6 | A requires-targets tool (`select_actors`, `set_actor_folder`, `set_actor_label`, `add_actor_tags`, `remove_actor_tags`, `set_actor_transform`, `duplicate_actor_with_offset`, `delete_actor`) must have a non-empty `targets` list; a no-target tool (`get_selection_context`, `find_actors`, `read_logs`, `get_package_status`, `spawn_actor_from_class`) must NOT be given targets; **(live)** every target path must resolve to an actor in the running editor world |
+| R6 | A requires-targets tool (`select_actors`, `set_actor_folder`, `set_actor_label`, `add_actor_tags`, `remove_actor_tags`, `set_actor_transform`, `duplicate_actor_with_offset`, `delete_actor`) must have a non-empty `targets` list; a requires-targets tool also includes `set_actor_property`; a no-target tool (`get_selection_context`, `find_actors`, `read_logs`, `get_package_status`, `spawn_actor_from_class`) must NOT be given targets; **(live)** every target path must resolve to an actor in the running editor world |
 | R7 | If any action is `destructive`, `requires_second_confirmation` must be `true` |
 | R8 | Mutation plans must carry a `context_fingerprint` with a non-empty `scene` and a `selected_object_paths` list |
-| R9 | Params must be allowlisted for the tool, with required params present and correctly typed: `folder_path` a non-empty string; `set_actor_label` needs a non-empty `label`; `add_actor_tags`/`remove_actor_tags` need a non-empty `tags` array of non-empty strings; transform/offset/instance vectors arrays of 3 numbers; `set_actor_transform` needs ≥1 of `location`/`rotation`/`scale`; `duplicate_actor_with_offset` needs `offset`; `spawn_actor_from_class` needs `class_path` plus a non-empty `transforms` list (each instance with a `location`) |
+| R9 | Params must be allowlisted for the tool, with required params present and correctly typed: `folder_path` a non-empty string; `set_actor_label` needs a non-empty `label`; `add_actor_tags`/`remove_actor_tags` need a non-empty `tags` array of non-empty strings; `set_actor_property` needs a non-empty `property` and a well-formed `value`; transform/offset/instance vectors arrays of 3 numbers; `set_actor_transform` needs ≥1 of `location`/`rotation`/`scale`; `duplicate_actor_with_offset` needs `offset`; `spawn_actor_from_class` needs `class_path` plus a non-empty `transforms` list (each instance with a `location`) |
 | R10 | No action may exceed `MaxTargetsPerAction` (200) targets; no spawn may exceed `MaxSpawnInstancesPerAction` (25) instances |
 | R11 | `spawn_actor_from_class` `class_path` must be on `SpawnClassAllowlist` and `static_mesh` (if given) on `SpawnMeshAllowlist`; `static_mesh` is only valid with `class_path` `/Script/Engine.StaticMeshActor` |
+| R12 | `set_actor_property` may write only a `(class, property, type)` tuple on `PropertyAllowlist`; the `value` kind must match the allowlisted type, and (for float/int with a configured range) fall within it. There is no arbitrary property write — the executor re-checks against the live object and additionally refuses missing/ambiguous component owners and missing properties |
 
 ### What `scripts/validate_plan.py` enforces (offline subset)
 
@@ -195,6 +198,10 @@ are **runtime-only** and cannot be decided from the plan JSON alone:
   UE5MCP, so a value the script rejects might be accepted by a customized editor
   (and vice versa). The running plugin is authoritative. The static-mesh/class
   pairing constraint is a pure schema rule and is always enforced.
+- **R12 property allowlist** — the `(class, property, type, range)` `PropertyAllowlist`
+  is project config, so it is enforced RUNTIME-ONLY by the C++ validator + executor.
+  The script checks the schema part of `set_actor_property` (a non-empty `property`
+  and a well-formed `value`) but not allowlist membership, type match, or range.
 
 ## Execution result
 

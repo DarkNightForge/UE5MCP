@@ -2,7 +2,80 @@
 
 #include "UE5MCPPreviewModel.h"
 
+#include "Components/ActorComponent.h"
 #include "GameFramework/Actor.h"
+#include "UE5MCPSettings.h"
+#include "UObject/UnrealType.h"
+
+namespace
+{
+	/** Human-readable form of the intended set_actor_property value. */
+	FString FormatPropertyValue(const FUE5MCPPropertyValue& Value)
+	{
+		using EKind = FUE5MCPPropertyValue::EKind;
+		switch (Value.Kind)
+		{
+		case EKind::Number: return FString::Printf(TEXT("%g"), Value.Number);
+		case EKind::Bool: return Value.Bool ? TEXT("true") : TEXT("false");
+		case EKind::Vector: return Value.Vector.ToString();
+		case EKind::Color: return Value.Color.ToString();
+		case EKind::Name: return FString::Printf(TEXT("'%s'"), *Value.Name);
+		default: return TEXT("(unset)");
+		}
+	}
+
+	/** Best-effort current value of the targeted property on an actor, for the before→after
+	 *  preview. Resolves the owner the same way the executor does (allowlist-driven), but
+	 *  reads only — returns empty when it cannot resolve. */
+	FString ReadCurrentPropertyText(const AActor* Actor, const FUE5MCPAction& Action)
+	{
+		if (!Actor)
+		{
+			return FString();
+		}
+		const UUE5MCPSettings* Settings = GetDefault<UUE5MCPSettings>();
+		const FName PropName(*Action.PropertyName);
+		const UObject* Owner = nullptr;
+		for (const FUE5MCPPropertyAllowEntry& Entry : Settings->PropertyAllowlist)
+		{
+			if (Entry.PropertyName != PropName)
+			{
+				continue;
+			}
+			if (!Action.PropertyComponentClass.IsEmpty() && Entry.ClassPath != Action.PropertyComponentClass)
+			{
+				continue;
+			}
+			UClass* OwnerClass = FindObject<UClass>(nullptr, *Entry.ClassPath);
+			if (!OwnerClass)
+			{
+				continue;
+			}
+			if (OwnerClass->IsChildOf(AActor::StaticClass()))
+			{
+				if (Actor->IsA(OwnerClass)) { Owner = Actor; break; }
+			}
+			else if (OwnerClass->IsChildOf(UActorComponent::StaticClass()))
+			{
+				TArray<UActorComponent*> Components;
+				const_cast<AActor*>(Actor)->GetComponents(OwnerClass, Components);
+				if (Components.Num() == 1) { Owner = Components[0]; break; }
+			}
+		}
+		if (!Owner)
+		{
+			return FString();
+		}
+		const FProperty* Prop = FindFProperty<FProperty>(Owner->GetClass(), PropName);
+		if (!Prop)
+		{
+			return FString();
+		}
+		FString Out;
+		Prop->ExportTextItem_Direct(Out, Prop->ContainerPtrToValuePtr<void>(Owner), nullptr, nullptr, PPF_None);
+		return Out;
+	}
+}
 
 FString FUE5MCPPreviewModel::BuildPreviewText(const FUE5MCPResolvedAction& ResolvedAction)
 {
@@ -56,6 +129,27 @@ FString FUE5MCPPreviewModel::BuildPreviewText(const FUE5MCPResolvedAction& Resol
 			}
 			Text += FString::Printf(TEXT("\n  %s: tags [%s]"), *Actor->GetActorLabel(),
 				*FString::Join(CurrentTags, TEXT(", ")));
+		}
+		return Text;
+	}
+
+	case EUE5MCPActionType::SetActorProperty:
+	{
+		const FString ValueText = FormatPropertyValue(Action.PropertyValue);
+		FString Text = FString::Printf(TEXT("set_actor_property: set '%s'%s = %s on %d actor(s)"),
+			*Action.PropertyName,
+			Action.PropertyComponentClass.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" on '%s'"), *Action.PropertyComponentClass),
+			*ValueText, Action.TargetActors.Num());
+		for (const TWeakObjectPtr<AActor>& ActorPtr : Action.TargetActors)
+		{
+			const AActor* Actor = ActorPtr.Get();
+			if (!Actor)
+			{
+				continue;
+			}
+			const FString Current = ReadCurrentPropertyText(Actor, Action);
+			Text += FString::Printf(TEXT("\n  %s: %s -> %s"), *Actor->GetActorLabel(),
+				Current.IsEmpty() ? TEXT("(unresolved)") : *Current, *ValueText);
 		}
 		return Text;
 	}

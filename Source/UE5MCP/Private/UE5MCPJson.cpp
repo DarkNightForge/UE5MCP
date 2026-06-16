@@ -355,6 +355,71 @@ bool UE5MCPJson::ParsePlanRequest(const FString& Body, FUE5MCPPlanRequest& OutRe
 				{
 					ActionRequest.ReadLogsQuery.Contains = StringValue;
 				}
+				else if (Key == TEXT("property") && Value->TryGetString(StringValue))
+				{
+					ActionRequest.PropertyName = StringValue.TrimStartAndEnd();
+				}
+				else if (Key == TEXT("component") && Value->TryGetString(StringValue))
+				{
+					ActionRequest.PropertyComponentClass = StringValue.TrimStartAndEnd();
+				}
+				else if (Key == TEXT("value"))
+				{
+					// Polymorphic, tagged by JSON kind. The validator checks this kind
+					// against the allowlisted property type; nothing is coerced silently.
+					FUE5MCPPropertyValue& PropValue = ActionRequest.PropertyValue;
+					double Scalar = 0.0;
+					bool Flag = false;
+					FString Text;
+					const TArray<TSharedPtr<FJsonValue>>* Arr = nullptr;
+					if (Value->Type == EJson::Number && Value->TryGetNumber(Scalar))
+					{
+						PropValue.Kind = FUE5MCPPropertyValue::EKind::Number;
+						PropValue.Number = Scalar;
+					}
+					else if (Value->Type == EJson::Boolean && Value->TryGetBool(Flag))
+					{
+						PropValue.Kind = FUE5MCPPropertyValue::EKind::Bool;
+						PropValue.Bool = Flag;
+					}
+					else if (Value->Type == EJson::String && Value->TryGetString(Text))
+					{
+						PropValue.Kind = FUE5MCPPropertyValue::EKind::Name;
+						PropValue.Name = Text;
+					}
+					else if (Value->TryGetArray(Arr) && (Arr->Num() == 3 || Arr->Num() == 4))
+					{
+						double Components[4] = { 0.0, 0.0, 0.0, 1.0 };
+						bool bAllNumbers = true;
+						for (int32 CompIndex = 0; CompIndex < Arr->Num(); ++CompIndex)
+						{
+							const TSharedPtr<FJsonValue>& Element = (*Arr)[CompIndex];
+							if (!Element.IsValid() || Element->Type != EJson::Number || !Element->TryGetNumber(Components[CompIndex]))
+							{
+								bAllNumbers = false;
+								break;
+							}
+						}
+						if (!bAllNumbers)
+						{
+							OutErrors.Add(FString::Printf(TEXT("actions[%d] param 'value' array must contain only numbers"), Index));
+						}
+						else if (Arr->Num() == 3)
+						{
+							PropValue.Kind = FUE5MCPPropertyValue::EKind::Vector;
+							PropValue.Vector = FVector(Components[0], Components[1], Components[2]);
+						}
+						else
+						{
+							PropValue.Kind = FUE5MCPPropertyValue::EKind::Color;
+							PropValue.Color = FLinearColor(Components[0], Components[1], Components[2], Components[3]);
+						}
+					}
+					else
+					{
+						OutErrors.Add(FString::Printf(TEXT("actions[%d] param 'value' must be a number, bool, string, or array of 3 (vector) or 4 (rgba) numbers"), Index));
+					}
+				}
 				else if (Key == TEXT("max_packages") && Value->TryGetNumber(NumberValue))
 				{
 					ActionRequest.PackageQuery.MaxPackages = static_cast<int32>(NumberValue);

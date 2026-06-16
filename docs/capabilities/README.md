@@ -1,7 +1,7 @@
 # UE5MCP capability map
 
 Status: living product/planning document  
-Last updated: 2026-06-15 (added `get_package_status`; labels/tags + `read_logs` verified 62/62 in-editor)  
+Last updated: 2026-06-15 (added `set_actor_property` allowlisted edits; suite verified 64/64 in-editor)  
 Source of truth for current tools: `Source/UE5MCP/Private/UE5MCPToolRegistry.cpp`, `docs/specs/action-plan-format.md`, `docs/specs/preview-approval-flow.md`, and `docs/validation-checklist.md`.
 
 This document tracks **breadth**: which parts of Unreal Engine development UE5MCP can currently observe, preview, mutate, refuse, and verify.
@@ -33,7 +33,7 @@ UE5MCP should grow by **governed capability**, not by opening an arbitrary execu
 | L0 Observe | Read context without mutation. | `get_selection`, `find_actors`, `read_logs`, `get_package_status`, `preview_actions` |
 | L1 Organize | Low-risk, visible editor organization. | `select_actors`, `set_actor_folder`, `set_actor_label`, `add_actor_tags`, `remove_actor_tags` |
 | L2 Spatial | Scene layout, transform, duplication, bounded spawning. | `set_actor_transform`, `duplicate_actor_with_offset`, `spawn_actor_from_class` |
-| L3 Properties | Allowlisted actor/component/property edits. | planned |
+| L3 Properties | Allowlisted actor/component/property edits. | `set_actor_property` (allowlisted) |
 | L4 Assets | Content Browser/package-level operations. | deferred |
 | L5 Runtime/debug | PIE/log/build/test diagnosis and recovery loops. | planned/read-only direction |
 | L6 Project/team workflow | source control, CI, packaging, collaboration. | planned/deferred |
@@ -54,6 +54,7 @@ Registry tools in v1:
 | `set_actor_label` | low mutation | Metadata / naming | Sets each target's editor display label; empty label refused as no-op; display-only (not forced unique). |
 | `add_actor_tags` | low mutation | Metadata / tagging | Adds tags to each target's `AActor.Tags`; idempotent; empty list refused as no-op. |
 | `remove_actor_tags` | low mutation | Metadata / tagging | Removes tags from each target's `AActor.Tags`; idempotent; empty list refused as no-op. |
+| `set_actor_property` | low mutation | Allowlisted properties | Writes one allowlisted `(class, property, type)` on each target or one of its components via reflection; type-safe, range-checked, before→after preview, one undo; anything off `PropertyAllowlist` refused (refusal lists allowed). Default allowlist: light Intensity + LightColor. |
 | `set_actor_transform` | low mutation | Spatial layout | Sets absolute location/rotation/scale components; omitted components unchanged; no-op refused. |
 | `duplicate_actor_with_offset` | low mutation | Spatial layout | Duplicates target actors once with a typed offset. |
 | `spawn_actor_from_class` | low mutation | Bounded creation | Spawns allowlisted classes/meshes, max 25 instances/action. |
@@ -61,8 +62,8 @@ Registry tools in v1:
 
 Current verification snapshot:
 
-- Public repo Python checks: `91 passed` in the last local verification run.
-- UE automation suite is now **62/62 passing**, verified in a headless in-editor run on UE 5.7.4 (Linux source build) — including the `read_logs`, label/tag, and `get_package_status` tests.
+- Public repo Python checks: `100 passed` in the last local verification run.
+- UE automation suite is now **64/64 passing**, verified in a headless in-editor run on UE 5.7.4 (Linux source build) — including the `read_logs`, label/tag, `get_package_status`, and `set_actor_property` tests.
 - Windows and Epic Games Launcher binary builds are not yet verified.
 - Full tool breadth is still actor/world-editor focused; most asset/Blueprint/team-pipeline workflows are not shipped.
 
@@ -142,11 +143,11 @@ Current verification snapshot:
 
 | Field | Current state |
 | --- | --- |
-| Status | `planned` / `blocked` pending property policy design |
-| Current support | Actor transform only; no generic component/property edits. |
-| Missing | Component enumeration, component selection, allowlisted property schema, type-safe property writes, before/after preview. |
-| Next useful slice | Read-only component summaries, then allowlisted scalar/vector/bool/name property edits for explicit component classes. |
-| Proof needed | No arbitrary property write; every property has declared type, constraints, preview, undo, and refusal codes. |
+| Status | `partial` — allowlisted scalar/bool/vector/color/name edits shipped |
+| Current support | `set_actor_property` writes a `(class, property, type)` tuple from `PropertyAllowlist` on the target actor or one of its components, resolved via reflection. Type-safe (float/int/bool/vector/color/name), optional numeric range, before→after preview, one undoable transaction, and machine-readable refusals (`property_not_allowlisted` — returning the allowed set — `property_type_mismatch`, `property_value_out_of_range`, `property_not_found`, `ambiguous_component`). Enforced in the validator (R12) AND re-checked in the executor. |
+| Missing | Read-only property/component enumeration tool (`get_actor_properties`), component addressing by instance name, struct-member paths, array/map properties, wider default allowlist. |
+| Next useful slice | A read-only `get_actor_properties` listing the allowlisted-editable properties + current values per target (discovery without trial-and-error). |
+| Proof needed | No arbitrary property write — verified by `UE5MCP.Executor.SetAllowlistedPropertyUndoAndRefusesNonAllowlisted` (allowlisted write + undo/redo; non-allowlisted refused) and `UE5MCP.Json.ParsesSetPropertyValueKinds`. |
 
 ### 9. Blueprint workflows
 
@@ -212,11 +213,11 @@ Current verification snapshot:
 
 | Field | Current state |
 | --- | --- |
-| Status | `partial` through actor spawning/transform only |
-| Current support | Can spawn allowlisted `PointLight` and `CameraActor`; transform actors. |
-| Missing | Light-specific properties, camera/lens settings, Sequencer integration, shot creation, render preview. |
-| Next useful slice | Allowlisted property edits for light intensity/color and camera transform/lens params. |
-| Proof needed | Preview before/after values and preserve undo. |
+| Status | `partial` — spawn/transform + allowlisted light Intensity/LightColor edits |
+| Current support | Can spawn allowlisted `PointLight` and `CameraActor` and transform actors; `set_actor_property` edits light `Intensity` (float, ranged) and `LightColor` (rgba) on the standard light components with preview + undo. |
+| Missing | Camera/lens settings, attenuation/falloff, IES profiles, Sequencer integration, shot creation, render preview. |
+| Next useful slice | Widen the property allowlist to camera transform/lens params and more light params, plus the `get_actor_properties` discovery tool. |
+| Proof needed | Preview before/after values and preserve undo (met for light intensity/color). |
 
 ### 16. Sequencer and cinematics
 
@@ -372,13 +373,14 @@ Current verification snapshot:
 
 Ranked by leverage and fit with the governed model:
 
-1. **Allowlisted property edits** (`L3`) — gateway to lights/cameras/material instances/components without open exec.
+1. **Read-only property/component inspection** (`L0`) — `get_actor_properties`: list the allowlisted-editable properties + current values per target, so edits don't rely on trial-and-error refusals.
 2. **Package-write policy on mutations** (`L6`) — surface `get_package_status` in mutation previews and refuse mutations against not-writable/not-checked-out packages (the next step after the readback).
 3. **Read-only Blueprint/material/asset inspection** (`L0`) — expands project understanding before risky mutation.
 4. **Capability registry / `list_capabilities`** (`L0`) — lets agents know exactly what is possible now and prevents hallucinated tools.
 
 Shipped since last revision:
 
+- **Allowlisted property edits** (`L3`) — `set_actor_property`: type-safe, range-checked, previewed, one-undo reflection writes gated by `PropertyAllowlist` (R12). See domain 8.
 - **Source-control/package status readback** (`L0/L6`) — `get_package_status`: read-only dirty-package set + source-control summary + per-package cached SC state. See domains 12–13.
 - **Actor labels and tags** (`L1`) — `set_actor_label`, `add_actor_tags`, `remove_actor_tags`: low-risk, previewed, idempotent, one undoable transaction. See domain 7.
 - **`read_logs` / diagnostics readback** (`L0`) — read-only readback of the plugin's structured log so agents self-correct after a refusal/error. See domain 26.
@@ -394,6 +396,7 @@ Shipped since last revision:
 | PIE/SIE mutation refusal | editor-state guardrails | ready / covered by tests |
 | Over-cap spawn refusal | blast-radius limit | ready if result UX is clear |
 | Actor labels/tags cleanup | low-risk metadata breadth | ready — `set_actor_label` / `add_actor_tags` / `remove_actor_tags` shipped |
+| Dim/recolor a light → preview → undo | allowlisted typed property edit + refusal of non-allowlisted | ready — `set_actor_property` shipped (light Intensity/LightColor) |
 | Read logs and self-correct | refusal/error recovery loop | ready — `read_logs` shipped (read-only, capped, filtered) |
 | Package/source-control status readback | blast-radius + SC visibility before saving | ready — `get_package_status` shipped (read-only, cache-only) |
 | Source-control-safe package mutation | studio adoption proof | partial — readback shipped; mutation refusal policy still needed |
