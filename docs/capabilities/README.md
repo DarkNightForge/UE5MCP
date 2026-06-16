@@ -136,7 +136,7 @@ Current verification snapshot:
 | Current support | `set_actor_label` sets each target's display label; `add_actor_tags` / `remove_actor_tags` mutate `AActor.Tags` idempotently. All three are low-risk, previewed, one undoable transaction, with empty label/empty tag-list refused as no-ops. Read tags/folders/labels through actor summaries; filter by tag/label/folder. |
 | Missing | Naming-convention validation, bulk metadata recipes, label uniqueness enforcement, rename-by-pattern. |
 | Next useful slice | Governed metadata recipes (validate against project naming rules; batch retag by query) on top of the shipped primitives. |
-| Proof needed | Covered by `UE5MCP.Executor.SetLabelAppliesThenUndoRedoReverts`, `UE5MCP.Executor.AddThenRemoveTagsWithUndo`, `UE5MCP.Json.ParsesLabelAndTags`, and the Python `LabelTests`/`TagTests` (pending the next in-editor headless run for the C++ trio). |
+| Proof needed | Covered (verified 62/62 in-editor on UE 5.7.4) by `UE5MCP.Executor.SetLabelAppliesThenUndoRedoReverts`, `UE5MCP.Executor.AddThenRemoveTagsWithUndo`, `UE5MCP.Json.ParsesLabelAndTags`, and the Python `LabelTests`/`TagTests`. |
 
 ### 8. Components and allowlisted properties
 
