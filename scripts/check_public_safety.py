@@ -71,7 +71,34 @@ def load_denylist(path=None):
     return terms, path
 
 
+def _git_listed_files(root):
+    """Files git would track or could add: cached + untracked-but-not-ignored.
+    Returns absolute paths, or None when root is not a git repo. This deliberately
+    EXCLUDES gitignored paths (build output like Binaries/Intermediate, caches) —
+    they are never published, so scanning them only yields false positives."""
+    if not os.path.isdir(os.path.join(root, ".git")):
+        return None
+    proc = subprocess.run(
+        ["git", "-C", root, "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+        capture_output=True, text=True,
+    )
+    if proc.returncode != 0:
+        return None
+    return [os.path.join(root, rel) for rel in proc.stdout.split("\0") if rel]
+
+
 def iter_text_files(root):
+    listed = _git_listed_files(root)
+    if listed is not None:
+        for path in listed:
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    yield path, fh.read()
+            except (UnicodeDecodeError, OSError):
+                continue
+        return
+
+    # Non-repo fallback: walk the tree, pruning known noise directories.
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
         for name in filenames:
