@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "summary": "Check which packages are dirty and their source-control status before saving",
+  "requires_approval": false,
+  "requires_second_confirmation": false,
+  "actions": [
+    {
+      "id": "get-package-status-01",
+      "tool": "get_package_status",
+      "risk": "read_only",
+      "targets": [],
+      "params": {
+        "max_packages": 100,
+        "dirty_only": true
+      }
+    }
+  ]
+}

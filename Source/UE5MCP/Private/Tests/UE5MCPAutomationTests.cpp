@@ -12,6 +12,7 @@
 #include "Misc/AutomationTest.h"
 #include "Subsystems/EditorActorSubsystem.h"
 #include "Tests/AutomationEditorCommon.h"
+#include "UObject/Package.h"
 #include "UE5MCPActionExecutor.h"
 #include "UE5MCPContextCollector.h"
 #include "UE5MCPTestHelpers.h"
@@ -156,6 +157,63 @@ bool FUE5MCPExecutorAddRemoveTagsUndoTest::RunTest(const FString& Parameters)
 		TestFalse(TEXT("'Cleanup' tag removed"), Actor->Tags.Contains(FName(TEXT("Cleanup"))));
 		TestTrue(TEXT("'Rock' tag preserved"), Actor->Tags.Contains(FName(TEXT("Rock"))));
 	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPExecutorPackageStatusTest,
+	"UE5MCP.Tools.PackageStatusReportsDirtyAndSourceControl", UE5MCPTests::KernelTestFlags)
+bool FUE5MCPExecutorPackageStatusTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+	if (!TestNotNull(TEXT("CreateNewMap returned a world"), World))
+	{
+		return false;
+	}
+
+	// Dirty the world package so the dirty-set readback has a known entry to find.
+	UPackage* WorldPackage = World->GetOutermost();
+	if (!TestNotNull(TEXT("World has an outer package"), WorldPackage))
+	{
+		return false;
+	}
+	WorldPackage->SetDirtyFlag(true);
+
+	FUE5MCPResolvedAction Resolved;
+	Resolved.Action.Id = TEXT("test-package-status");
+	Resolved.Action.Type = EUE5MCPActionType::GetPackageStatus;
+	Resolved.Action.Risk = EUE5MCPRiskLevel::ReadOnly;
+	Resolved.Action.PackageQuery.bDirtyOnly = true;
+	Resolved.Action.PackageQuery.MaxPackages = 200;
+
+	const FUE5MCPExecutionResult Result =
+		FUE5MCPActionExecutor::ExecuteApprovedPlan(UE5MCPTests::WrapPlanForTest(Resolved));
+
+	TestTrue(TEXT("Read-only get_package_status executed"), Result.bSuccess);
+	TestEqual(TEXT("One action result"), Result.ActionResults.Num(), 1);
+	if (Result.ActionResults.Num() == 1)
+	{
+		const FUE5MCPActionResult& Action = Result.ActionResults[0];
+		TestTrue(TEXT("Result carries package status"), Action.bHasPackageStatus);
+		TestTrue(TEXT("A source-control provider name is reported"), !Action.SourceControl.ProviderName.IsEmpty());
+
+		// The dirty world package must appear, flagged dirty; every row carries a token.
+		const FString WorldPackageName = WorldPackage->GetName();
+		bool bFoundDirtyWorld = false;
+		bool bAllHaveToken = true;
+		for (const FUE5MCPPackageState& State : Action.Packages)
+		{
+			if (State.PackageName == WorldPackageName && State.bDirty)
+			{
+				bFoundDirtyWorld = true;
+			}
+			bAllHaveToken &= !State.SourceControlState.IsEmpty();
+		}
+		TestTrue(TEXT("Dirty world package reported as dirty"), bFoundDirtyWorld);
+		TestTrue(TEXT("Every package row carries a source-control state token"), bAllHaveToken);
+	}
+	TestTrue(TEXT("Message reports the read-only readback"),
+		UE5MCPTests::LogLinesContain(Result.UserVisibleLogLines, TEXT("get_package_status")));
 
 	return true;
 }

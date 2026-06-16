@@ -97,6 +97,12 @@ REGISTRY = {
         "requires_targets": False,
         "accepts_targets": False,
     },
+    "get_package_status": {
+        "risk": READ_ONLY,
+        "params": {"max_packages": int, "dirty_only": bool},
+        "requires_targets": False,
+        "accepts_targets": False,
+    },
     "select_actors": {
         "risk": LOW_RISK,
         "params": {},

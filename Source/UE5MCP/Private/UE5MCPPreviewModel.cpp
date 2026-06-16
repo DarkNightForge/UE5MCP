@@ -168,6 +168,14 @@ FString FUE5MCPPreviewModel::BuildPreviewText(const FUE5MCPResolvedAction& Resol
 				: *FString::Printf(TEXT(" containing '%s'"), *Query.Contains));
 	}
 
+	case EUE5MCPActionType::GetPackageStatus:
+	{
+		const FUE5MCPPackageStatusQuery& Query = Action.PackageQuery;
+		return FString::Printf(TEXT("get_package_status: report up to %d %spackage(s) and the source-control summary (read-only)"),
+			Query.MaxPackages,
+			Query.bDirtyOnly ? TEXT("dirty ") : TEXT("loaded "));
+	}
+
 	case EUE5MCPActionType::FindActors:
 	{
 		const FUE5MCPFindActorsQuery& Query = Action.FindQuery;

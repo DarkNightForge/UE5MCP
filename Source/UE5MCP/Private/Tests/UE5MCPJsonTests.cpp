@@ -132,6 +132,39 @@ bool FUE5MCPJsonParseLabelAndTagsTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPJsonParsePackageStatusTest,
+	"UE5MCP.Json.ParsesPackageStatus", UE5MCPTests::KernelTestFlags)
+bool FUE5MCPJsonParsePackageStatusTest::RunTest(const FString& Parameters)
+{
+	const FString Body = TEXT(R"json({
+		"schema_version": 1,
+		"summary": "Package status",
+		"requires_approval": false,
+		"actions": [
+			{
+				"id": "a1",
+				"tool": "get_package_status",
+				"risk": "read_only",
+				"targets": [],
+				"params": { "max_packages": 250, "dirty_only": false }
+			}
+		]
+	})json");
+
+	FUE5MCPPlanRequest Request;
+	TArray<FString> Errors;
+	TestTrue(TEXT("Envelope parses"), UE5MCPJson::ParsePlanRequest(Body, Request, Errors));
+	TestEqual(TEXT("No parse errors"), Errors.Num(), 0);
+	TestEqual(TEXT("one action"), Request.Actions.Num(), 1);
+	if (Request.Actions.Num() == 1)
+	{
+		TestEqual(TEXT("max_packages parsed"), Request.Actions[0].PackageQuery.MaxPackages, 250);
+		TestFalse(TEXT("dirty_only parsed as false"), Request.Actions[0].PackageQuery.bDirtyOnly);
+	}
+
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPJsonParseTransformTest,
 	"UE5MCP.Json.ParsesTransformParams", UE5MCPTests::KernelTestFlags)
 bool FUE5MCPJsonParseTransformTest::RunTest(const FString& Parameters)

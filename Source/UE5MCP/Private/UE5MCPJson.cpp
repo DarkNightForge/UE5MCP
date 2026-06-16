@@ -355,6 +355,14 @@ bool UE5MCPJson::ParsePlanRequest(const FString& Body, FUE5MCPPlanRequest& OutRe
 				{
 					ActionRequest.ReadLogsQuery.Contains = StringValue;
 				}
+				else if (Key == TEXT("max_packages") && Value->TryGetNumber(NumberValue))
+				{
+					ActionRequest.PackageQuery.MaxPackages = static_cast<int32>(NumberValue);
+				}
+				else if (Key == TEXT("dirty_only") && Value->TryGetBool(BoolValue))
+				{
+					ActionRequest.PackageQuery.bDirtyOnly = BoolValue;
+				}
 			}
 
 			// find_actors uses folder_path as its folder filter as well.
@@ -434,6 +442,27 @@ FString UE5MCPJson::SerializeExecutionResult(const FUE5MCPExecutionResult& Resul
 				Lines.Add(MakeShared<FJsonValueString>(Line));
 			}
 			ResultObject->SetArrayField(TEXT("log_lines"), Lines);
+		}
+		if (ActionResult.bHasPackageStatus)
+		{
+			TSharedRef<FJsonObject> ScObject = MakeShared<FJsonObject>();
+			ScObject->SetBoolField(TEXT("enabled"), ActionResult.SourceControl.bEnabled);
+			ScObject->SetBoolField(TEXT("available"), ActionResult.SourceControl.bAvailable);
+			ScObject->SetStringField(TEXT("provider"), ActionResult.SourceControl.ProviderName);
+			ResultObject->SetObjectField(TEXT("source_control"), ScObject);
+
+			TArray<TSharedPtr<FJsonValue>> PackageValues;
+			for (const FUE5MCPPackageState& Package : ActionResult.Packages)
+			{
+				TSharedRef<FJsonObject> PackageObject = MakeShared<FJsonObject>();
+				PackageObject->SetStringField(TEXT("name"), Package.PackageName);
+				PackageObject->SetStringField(TEXT("filename"), Package.Filename);
+				PackageObject->SetBoolField(TEXT("dirty"), Package.bDirty);
+				PackageObject->SetStringField(TEXT("source_control_state"), Package.SourceControlState);
+				PackageValues.Add(MakeShared<FJsonValueObject>(PackageObject));
+			}
+			ResultObject->SetArrayField(TEXT("packages"), PackageValues);
+			ResultObject->SetBoolField(TEXT("packages_truncated"), ActionResult.bPackagesTruncated);
 		}
 		ActionResults.Add(MakeShared<FJsonValueObject>(ResultObject));
 	}

@@ -12,6 +12,7 @@ enum class EUE5MCPActionType : uint8
 	GetSelectionContext,
 	FindActors,
 	ReadLogs,
+	GetPackageStatus,
 	SelectActors,
 	SetActorFolder,
 	SetActorLabel,
@@ -72,6 +73,38 @@ struct FUE5MCPReadLogsQuery
 	FString Contains;
 };
 
+/** Bounded query parameters for the get_package_status read-only tool. Reports the
+ *  packages a save/mutation would touch (dirty set) plus a source-control summary,
+ *  so an agent can see blast radius before mutating. No source-control network call
+ *  is issued — per-package state is read from the provider's cache only. */
+struct FUE5MCPPackageStatusQuery
+{
+	/** Cap on returned packages; the executor clamps to [1, MaxPackageStatusResults]. */
+	int32 MaxPackages = 100;
+	/** When true (default), report only dirty (unsaved) packages; when false, also
+	 *  include currently loaded on-disk packages (still capped). */
+	bool bDirtyOnly = true;
+};
+
+/** Editor-wide source-control summary for get_package_status. */
+struct FUE5MCPSourceControlSummary
+{
+	bool bEnabled = false;
+	bool bAvailable = false;
+	FString ProviderName;
+};
+
+/** Per-package state row for get_package_status. SourceControlState is a stable
+ *  machine token (e.g. "checked_out", "not_current", "not_controlled",
+ *  "source_control_disabled", "unknown") classified from the cached provider state. */
+struct FUE5MCPPackageState
+{
+	FString PackageName;
+	FString Filename;
+	bool bDirty = false;
+	FString SourceControlState;
+};
+
 /** Optional absolute transform components for set_actor_transform. Each field is
  *  applied only when its bHas* flag is set; unset components are left unchanged.
  *  Rotation is carried as Euler degrees, matching the context pack's rotation output. */
@@ -108,6 +141,7 @@ struct FUE5MCPAction
 	TArray<FName> Tags;
 	FUE5MCPFindActorsQuery FindQuery;
 	FUE5MCPReadLogsQuery ReadLogsQuery;
+	FUE5MCPPackageStatusQuery PackageQuery;
 	FUE5MCPTransformDelta Transform;
 	FVector DuplicateOffset = FVector::ZeroVector;
 	FString SpawnClassPath;
@@ -147,6 +181,11 @@ struct FUE5MCPActionResult
 	TArray<FUE5MCPActorSummary> FoundActors;
 	/** Populated by read_logs only: the matching structured log lines, oldest→newest. */
 	TArray<FString> LogLines;
+	/** Populated by get_package_status only. */
+	bool bHasPackageStatus = false;
+	FUE5MCPSourceControlSummary SourceControl;
+	TArray<FUE5MCPPackageState> Packages;
+	bool bPackagesTruncated = false;
 };
 
 struct FUE5MCPExecutionResult
@@ -216,6 +255,7 @@ struct FUE5MCPActionRequest
 	TArray<FName> Tags;
 	FUE5MCPFindActorsQuery FindQuery;
 	FUE5MCPReadLogsQuery ReadLogsQuery;
+	FUE5MCPPackageStatusQuery PackageQuery;
 	FUE5MCPTransformDelta Transform;
 	bool bHasDuplicateOffset = false;
 	FVector DuplicateOffset = FVector::ZeroVector;

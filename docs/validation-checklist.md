@@ -4,7 +4,7 @@ Claims stay honest by mapping to checks. The plugin's behavior is verified by a 
 
 ## Automation suite (in-editor, headless)
 
-`Source/UE5MCP/Private/Tests/` carries a headless automation suite — **60 tests, no display required** — run with:
+`Source/UE5MCP/Private/Tests/` carries a headless automation suite — **62 tests, no display required** — run with:
 
 ```bash
 <UE-ROOT>/Engine/Binaries/<Platform>/UnrealEditor-Cmd <YOUR-PROJECT>/YourProject.uproject \
@@ -12,13 +12,13 @@ Claims stay honest by mapping to checks. The plugin's behavior is verified by a 
   -ReportExportPath=/tmp/ue5mcp_report
 ```
 
-It covers: the executor happy path with single-step undo/redo; every validator format rule; target-resolution round-trips; all tools (observe, find, read logs, select, organize, label, tag add/remove, transform, duplicate, allowlisted spawn, destructive delete) including bounded queries; the full approval lifecycle (empty selection, stale selection, stale world, play-mode refusal that keeps the plan approvable, plan consumption, supersede-by-panel, external-approval gating); and the MCP/bridge boundary (read-only executes immediately, mutations pend/gate, the transport cannot execute, malformed/unknown requests refused with reasons, loopback-host classification). **Last full run: 56/56 passing on UE 5.7.4 (Linux source build); four tests are added and pending the next headless run in the editor — `read_logs` (`UE5MCP.Tools.ReadLogsReturnsFilteredRecentLines`), label undo/redo (`UE5MCP.Executor.SetLabelAppliesThenUndoRedoReverts`), tag add/remove+undo (`UE5MCP.Executor.AddThenRemoveTagsWithUndo`), and label/tags JSON parse (`UE5MCP.Json.ParsesLabelAndTags`).**
+It covers: the executor happy path with single-step undo/redo; every validator format rule; target-resolution round-trips; all tools (observe, find, read logs, package/source-control status, select, organize, label, tag add/remove, transform, duplicate, allowlisted spawn, destructive delete) including bounded queries; the full approval lifecycle (empty selection, stale selection, stale world, play-mode refusal that keeps the plan approvable, plan consumption, supersede-by-panel, external-approval gating); and the MCP/bridge boundary (read-only executes immediately, mutations pend/gate, the transport cannot execute, malformed/unknown requests refused with reasons, loopback-host classification). **Last full run: 62/62 passing on UE 5.7.4 (Linux source build) — verified in-editor, including `read_logs`, the label/tag executor + JSON tests, and `get_package_status` (`UE5MCP.Tools.PackageStatusReportsDirtyAndSourceControl`, `UE5MCP.Json.ParsesPackageStatus`).**
 
 ## Repository scripts (the typed-plan contract)
 
 | # | Check | Command |
 | --- | --- | --- |
-| A1 | Valid example plans pass the spec | `python3 scripts/validate_plan.py examples/plans/organize-selection.json examples/plans/read-only-context.json examples/plans/read-logs.json examples/plans/set-actor-label.json examples/plans/tag-actors.json examples/plans/transform-selection.json examples/plans/spawn-cubes.json` |
+| A1 | Valid example plans pass the spec | `python3 scripts/validate_plan.py examples/plans/organize-selection.json examples/plans/read-only-context.json examples/plans/read-logs.json examples/plans/package-status.json examples/plans/set-actor-label.json examples/plans/tag-actors.json examples/plans/transform-selection.json examples/plans/spawn-cubes.json` |
 | A2 | Invalid example plans are rejected for the documented reasons | `python3 scripts/validate_plan.py --expect-invalid examples/plans/invalid-empty-targets.json examples/plans/invalid-destructive-no-confirmation.json examples/plans/invalid-noop-transform.json examples/plans/invalid-empty-tags.json` |
 | A3 | Script unit tests pass | `python3 -m unittest discover -s tests` |
 

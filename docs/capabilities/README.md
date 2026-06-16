@@ -1,7 +1,7 @@
 # UE5MCP capability map
 
 Status: living product/planning document  
-Last updated: 2026-06-15 (added `set_actor_label`, `add_actor_tags`, `remove_actor_tags`)  
+Last updated: 2026-06-15 (added `get_package_status`; labels/tags + `read_logs` verified 62/62 in-editor)  
 Source of truth for current tools: `Source/UE5MCP/Private/UE5MCPToolRegistry.cpp`, `docs/specs/action-plan-format.md`, `docs/specs/preview-approval-flow.md`, and `docs/validation-checklist.md`.
 
 This document tracks **breadth**: which parts of Unreal Engine development UE5MCP can currently observe, preview, mutate, refuse, and verify.
@@ -30,7 +30,7 @@ UE5MCP should grow by **governed capability**, not by opening an arbitrary execu
 
 | Level | Meaning | Current examples |
 | --- | --- | --- |
-| L0 Observe | Read context without mutation. | `get_selection`, `find_actors`, `read_logs`, `preview_actions` |
+| L0 Observe | Read context without mutation. | `get_selection`, `find_actors`, `read_logs`, `get_package_status`, `preview_actions` |
 | L1 Organize | Low-risk, visible editor organization. | `select_actors`, `set_actor_folder`, `set_actor_label`, `add_actor_tags`, `remove_actor_tags` |
 | L2 Spatial | Scene layout, transform, duplication, bounded spawning. | `set_actor_transform`, `duplicate_actor_with_offset`, `spawn_actor_from_class` |
 | L3 Properties | Allowlisted actor/component/property edits. | planned |
@@ -47,6 +47,7 @@ Registry tools in v1:
 | `get_selection_context` / MCP `get_selection` | read-only | Editor context | Current world, selected actors, capped loaded-actor context. |
 | `find_actors` | read-only | Actor discovery | Finds loaded editor-world actors by class, label, tag, folder, selected-only, capped results. |
 | `read_logs` | read-only | Logs / diagnostics | Returns recent `LogUE5MCP` lines (tool calls, refusals, errors); capped (default 100, max 512), oldest→newest, optional substring filter. |
+| `get_package_status` | read-only | Source control / packages | Reports the dirty package set (blast radius of a save) + source-control summary (provider, enabled/available) + per-package cached SC state; capped (default 100, max 500); cache-only, no SC network call. |
 | MCP `preview_actions` | read-only | UX / preview | Validates and resolves typed action plans without executing. |
 | `select_actors` | low mutation | Selection | Sets editor selection to explicit actor targets. |
 | `set_actor_folder` | low mutation | World Outliner organization | Moves target actors into a named folder. |
@@ -60,8 +61,8 @@ Registry tools in v1:
 
 Current verification snapshot:
 
-- Public repo Python checks: `83 passed` in the last local verification run.
-- UE automation suite is now 60 headless tests (last full run 56/56 on UE 5.7.4 Linux source build; the `read_logs`, label, and tags tests are pending the next editor run).
+- Public repo Python checks: `91 passed` in the last local verification run.
+- UE automation suite is now **62/62 passing**, verified in a headless in-editor run on UE 5.7.4 (Linux source build) — including the `read_logs`, label/tag, and `get_package_status` tests.
 - Windows and Epic Games Launcher binary builds are not yet verified.
 - Full tool breadth is still actor/world-editor focused; most asset/Blueprint/team-pipeline workflows are not shipped.
 
@@ -181,21 +182,21 @@ Current verification snapshot:
 
 | Field | Current state |
 | --- | --- |
-| Status | `deferred` |
-| Current support | Spawn uses allowlisted class/mesh references; no asset mutation. |
+| Status | `deferred` for asset mutation; `partial` read-only package status |
+| Current support | Spawn uses allowlisted class/mesh references; no asset mutation. `get_package_status` reports dirty packages (the blast radius a save would touch) and their source-control state. |
 | Missing | Asset rename/move/delete, duplicate assets, redirector handling, package save, dependency/reference previews, asset registry queries. |
-| Next useful slice | Read-only asset registry query and dependency/reference preview. Mutation deferred until source-control/package semantics are designed. |
+| Next useful slice | Read-only asset registry query and dependency/reference preview, building on the package-status readback. Mutation deferred until source-control/package semantics are designed. |
 | Proof needed | Asset operation previews must list packages touched, redirectors, references, source-control requirements, and rollback/undo limits. |
 
 ### 13. Source control and team pipeline
 
 | Field | Current state |
 | --- | --- |
-| Status | `deferred` / `planned` |
-| Current support | None. Editor changes participate in normal save flow but UE5MCP does not manage checkouts/changelists. |
-| Missing | Perforce/Git status, checkout/add/revert, changelist routing, read-only package refusal, dirty package list, conflict handling. |
-| Next useful slice | Read-only source-control/package status surfaced in previews. |
-| Proof needed | Any mutation that dirties packages reports exact package list and refuses when package state is not writable/checked out as policy requires. |
+| Status | `partial` — read-only status shipped; no SC mutation |
+| Current support | `get_package_status` reports the dirty package set plus a source-control summary (provider, enabled/available) and per-package cached SC state token (`checked_out`, `not_current`, `not_controlled`, `source_control_disabled`, …). Cache-only: it never starts a Perforce/Git network call from a model request. Editor changes still participate in the normal save flow; UE5MCP does not manage checkouts/changelists. |
+| Missing | Checkout/add/revert, changelist routing, read-only-package mutation refusal, explicit SC refresh (opt-in network call), conflict handling. |
+| Next useful slice | Wire `get_package_status` into mutation previews (show packages a plan will dirty) and add a policy that refuses mutations against not-writable/not-checked-out packages. |
+| Proof needed | Any mutation that dirties packages reports the exact package list and refuses when package state is not writable/checked out as policy requires. |
 
 ### 14. World Partition, levels, sublevels, streaming
 
@@ -371,13 +372,14 @@ Current verification snapshot:
 
 Ranked by leverage and fit with the governed model:
 
-1. **Source-control/package status readback** (`L0/L6`) — required before serious asset/package mutation.
-2. **Allowlisted property edits** (`L3`) — gateway to lights/cameras/material instances/components without open exec.
+1. **Allowlisted property edits** (`L3`) — gateway to lights/cameras/material instances/components without open exec.
+2. **Package-write policy on mutations** (`L6`) — surface `get_package_status` in mutation previews and refuse mutations against not-writable/not-checked-out packages (the next step after the readback).
 3. **Read-only Blueprint/material/asset inspection** (`L0`) — expands project understanding before risky mutation.
 4. **Capability registry / `list_capabilities`** (`L0`) — lets agents know exactly what is possible now and prevents hallucinated tools.
 
 Shipped since last revision:
 
+- **Source-control/package status readback** (`L0/L6`) — `get_package_status`: read-only dirty-package set + source-control summary + per-package cached SC state. See domains 12–13.
 - **Actor labels and tags** (`L1`) — `set_actor_label`, `add_actor_tags`, `remove_actor_tags`: low-risk, previewed, idempotent, one undoable transaction. See domain 7.
 - **`read_logs` / diagnostics readback** (`L0`) — read-only readback of the plugin's structured log so agents self-correct after a refusal/error. See domain 26.
 
@@ -393,7 +395,8 @@ Shipped since last revision:
 | Over-cap spawn refusal | blast-radius limit | ready if result UX is clear |
 | Actor labels/tags cleanup | low-risk metadata breadth | ready — `set_actor_label` / `add_actor_tags` / `remove_actor_tags` shipped |
 | Read logs and self-correct | refusal/error recovery loop | ready — `read_logs` shipped (read-only, capped, filtered) |
-| Source-control-safe package mutation | studio adoption proof | needs design + implementation |
+| Package/source-control status readback | blast-radius + SC visibility before saving | ready — `get_package_status` shipped (read-only, cache-only) |
+| Source-control-safe package mutation | studio adoption proof | partial — readback shipped; mutation refusal policy still needed |
 
 ## Rules: when to update this document
 

@@ -10,7 +10,8 @@
 // file holds no editor capability at all, only HTTP calls to 127.0.0.1.
 //
 // APPROVAL MODEL (mirrors the plugin's risk tiers via tool naming):
-//   read_only   tools (get_selection, find_actors, preview_actions)
+//   read_only   tools (get_selection, find_actors, read_logs,
+//               get_package_status, preview_actions)
 //               → safe to allowlist; never mutate.
 //   low_risk    tools (select_actors, set_actor_folder, set_actor_label,
 //               add_actor_tags, remove_actor_tags, set_actor_transform,
@@ -94,6 +95,20 @@ const TOOLS = [
       additionalProperties: false,
     },
     annotations: { title: 'Read UE5MCP logs', readOnlyHint: true },
+  },
+  {
+    name: 'get_package_status',
+    risk: 'read_only',
+    description: 'Report the packages a save/mutation would touch (the dirty set) plus a source-control summary (provider, enabled/available, per-package cached state) — read-only, capped. Per-package source-control state is read from the provider CACHE only; this never starts a Perforce/Git network call. Use it to see blast radius before mutating or saving.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        max_packages: { type: 'number', description: 'Max packages to return (default 100, max 500).' },
+        dirty_only: { type: 'boolean', description: 'When true (default) report only dirty/unsaved packages; when false also include other loaded on-disk packages (still capped).' },
+      },
+      additionalProperties: false,
+    },
+    annotations: { title: 'Get package / source-control status', readOnlyHint: true },
   },
   {
     name: 'preview_actions',
@@ -348,6 +363,7 @@ const PLUGIN_TOOL_RISK = {
   get_selection_context: 'read_only',
   find_actors: 'read_only',
   read_logs: 'read_only',
+  get_package_status: 'read_only',
   select_actors: 'low_risk',
   set_actor_folder: 'low_risk',
   set_actor_label: 'low_risk',
@@ -518,6 +534,15 @@ const HANDLERS = {
     return runReadOnlyPlan('Read recent UE5MCP log lines.', makeAction('read_logs', 'read_only', [], params));
   },
 
+  async get_package_status(args = {}) {
+    const params = {};
+    for (const key of ['max_packages', 'dirty_only']) {
+      if (args[key] !== undefined) params[key] = args[key];
+    }
+    return runReadOnlyPlan('Report dirty packages and source-control status.',
+      makeAction('get_package_status', 'read_only', [], params));
+  },
+
   async preview_actions(args) {
     const actions = args.actions.map((entry) => {
       const risk = PLUGIN_TOOL_RISK[entry.tool] ?? 'low_risk';
@@ -632,10 +657,10 @@ async function handleRequest(message) {
           result: {
             protocolVersion,
             capabilities: { tools: {} },
-            serverInfo: { name: 'ue5mcp', version: '0.4.0' },
+            serverInfo: { name: 'ue5mcp', version: '0.5.0' },
             instructions:
               'UE5MCP drives a LIVE Unreal Editor through typed, policy-checked, undoable tool calls. ' +
-              'Read tools (get_selection, find_actors, read_logs, preview_actions) are safe and free. Mutating tools are ' +
+              'Read tools (get_selection, find_actors, read_logs, get_package_status, preview_actions) are safe and free. Mutating tools are ' +
               'approved by the user via the tool-permission prompt — make every call self-describing, and for ' +
               'non-obvious effects call preview_actions first and surface the preview. All mutations are ' +
               'reversible with editor Undo (one step per call). Actor targets must be exact paths from ' +

@@ -51,6 +51,9 @@ class ExampleFileTests(unittest.TestCase):
     def test_tag_actors_is_valid(self):
         self.assertEqual(validate_plan(load_example("tag-actors.json")), [])
 
+    def test_package_status_is_valid(self):
+        self.assertEqual(validate_plan(load_example("package-status.json")), [])
+
     def test_invalid_examples_fail_for_documented_rules(self):
         problems = validate_plan(load_example("invalid-empty-targets.json"))
         self.assertIn("R6", rules(problems))
@@ -298,6 +301,52 @@ class TagTests(unittest.TestCase):
     def test_requires_targets(self):
         plan = self.tag_plan("remove_actor_tags", {"tags": ["Rock"]})
         plan["actions"][0]["targets"] = []
+        self.assertIn("R6", rules(validate_plan(plan)))
+
+
+class PackageStatusTests(unittest.TestCase):
+    def package_status_plan(self, params):
+        return {
+            "schema_version": 1,
+            "summary": "Report dirty packages and source-control status.",
+            "requires_approval": False,
+            "actions": [
+                {
+                    "id": "get-package-status-01",
+                    "tool": "get_package_status",
+                    "risk": "read_only",
+                    "targets": [],
+                    "params": params,
+                }
+            ],
+        }
+
+    def test_no_params_is_valid(self):
+        # Read-only: needs neither approval nor a fingerprint.
+        self.assertEqual(validate_plan(self.package_status_plan({})), [])
+
+    def test_filters_are_valid(self):
+        self.assertEqual(
+            validate_plan(self.package_status_plan({"max_packages": 250, "dirty_only": False})), []
+        )
+
+    def test_unknown_param_rejected(self):
+        self.assertIn("R9", rules(validate_plan(self.package_status_plan({"path": "/Game"}))))
+
+    def test_max_packages_must_be_int(self):
+        self.assertIn("R9", rules(validate_plan(self.package_status_plan({"max_packages": 1.5}))))
+
+    def test_max_packages_bool_rejected(self):
+        self.assertIn("R9", rules(validate_plan(self.package_status_plan({"max_packages": True}))))
+
+    def test_dirty_only_must_be_bool(self):
+        self.assertIn("R9", rules(validate_plan(self.package_status_plan({"dirty_only": "yes"}))))
+
+    def test_targets_rejected(self):
+        plan = self.package_status_plan({})
+        plan["actions"][0]["targets"] = [
+            "/Temp/Untitled_1.Untitled_1:PersistentLevel.StaticMeshActor_0"
+        ]
         self.assertIn("R6", rules(validate_plan(plan)))
 
 

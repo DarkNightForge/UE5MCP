@@ -67,9 +67,9 @@ Full walkthrough: [`docs/demo-live.md`](docs/demo-live.md). Architecture & safet
 
 ## The tools
 
-Thirteen MCP tools (`mcp__ue5mcp__*`), in three risk tiers:
+Fourteen MCP tools (`mcp__ue5mcp__*`), in three risk tiers:
 
-**Read-only** — `get_selection`, `find_actors`, `read_logs`, `preview_actions`
+**Read-only** — `get_selection`, `find_actors`, `read_logs`, `get_package_status`, `preview_actions`
 **Low mutation** — `select_actors`, `set_actor_folder`, `set_actor_label`, `add_actor_tags`, `remove_actor_tags`, `set_actor_transform`, `duplicate_actor_with_offset`, `spawn_actor_from_class` (class + mesh allowlisted)
 **Destructive** — `delete_actor`
 

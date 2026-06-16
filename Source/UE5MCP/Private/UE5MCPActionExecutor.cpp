@@ -9,8 +9,15 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
+#include "FileHelpers.h"
 #include "GameFramework/Actor.h"
+#include "ISourceControlModule.h"
+#include "ISourceControlProvider.h"
+#include "ISourceControlState.h"
+#include "SourceControlHelpers.h"
 #include "Subsystems/EditorActorSubsystem.h"
+#include "UObject/Package.h"
+#include "UObject/UObjectIterator.h"
 #include "UE5MCPContextCollector.h"
 #include "UE5MCPEditorService.h"
 #include "UE5MCPSettings.h"
@@ -74,6 +81,9 @@ FUE5MCPExecutionResult FUE5MCPActionExecutor::ExecuteApprovedPlan(const FUE5MCPV
 			break;
 		case EUE5MCPActionType::ReadLogs:
 			ActionResult = ExecuteReadLogs(ResolvedAction);
+			break;
+		case EUE5MCPActionType::GetPackageStatus:
+			ActionResult = ExecuteGetPackageStatus(ResolvedAction);
 			break;
 		case EUE5MCPActionType::SelectActors:
 			ActionResult = ExecuteSelectActors(ResolvedAction);
@@ -743,6 +753,133 @@ FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteReadLogs(const FUE5MCPResolved
 		Result.LogLines.Num(), TotalMatched,
 		Filter.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" filtered by '%s'"), *Filter),
 		bTruncated ? TEXT(" (older lines truncated at the cap)") : TEXT(""));
+	return Result;
+}
+
+namespace
+{
+	/** Hard cap on packages get_package_status returns; a client cannot ask for more. */
+	constexpr int32 MaxPackageStatusResults = 500;
+
+	/** Classify a cached source-control state into a stable machine token. The state is
+	 *  whatever the provider has cached (EStateCacheUsage::Use); we never trigger a
+	 *  blocking source-control network operation from a model-originated request. */
+	FString ClassifySourceControlState(const FSourceControlStatePtr& State)
+	{
+		if (!State.IsValid())
+		{
+			return TEXT("unknown");
+		}
+		if (State->IsCheckedOutOther())
+		{
+			return TEXT("checked_out_other");
+		}
+		if (State->IsCheckedOut())
+		{
+			return TEXT("checked_out");
+		}
+		if (State->IsAdded())
+		{
+			return TEXT("added");
+		}
+		if (State->IsDeleted())
+		{
+			return TEXT("deleted");
+		}
+		if (!State->IsSourceControlled())
+		{
+			return TEXT("not_controlled");
+		}
+		if (!State->IsCurrent())
+		{
+			return TEXT("not_current");
+		}
+		return TEXT("up_to_date");
+	}
+}
+
+FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteGetPackageStatus(const FUE5MCPResolvedAction& ResolvedAction)
+{
+	const FUE5MCPAction& Action = ResolvedAction.Action;
+	FUE5MCPActionResult Result;
+	Result.ActionId = Action.Id;
+	Result.bHasPackageStatus = true;
+
+	const int32 MaxPackages = FMath::Clamp(Action.PackageQuery.MaxPackages, 1, MaxPackageStatusResults);
+	const bool bDirtyOnly = Action.PackageQuery.bDirtyOnly;
+
+	// Source-control summary (read from the active provider; never starts a connection).
+	ISourceControlModule& SCModule = ISourceControlModule::Get();
+	ISourceControlProvider& Provider = SCModule.GetProvider();
+	Result.SourceControl.bEnabled = SCModule.IsEnabled();
+	Result.SourceControl.bAvailable = Result.SourceControl.bEnabled && Provider.IsAvailable();
+	Result.SourceControl.ProviderName = Provider.GetName().ToString();
+
+	// Collect the packages of interest. Dirty packages are the blast radius a save or
+	// mutation would touch; the optional non-dirty path adds other loaded on-disk packages.
+	TArray<UPackage*> Packages;
+	FEditorFileUtils::GetDirtyContentPackages(Packages);
+	FEditorFileUtils::GetDirtyWorldPackages(Packages);
+	if (!bDirtyOnly)
+	{
+		for (TObjectIterator<UPackage> It; It; ++It)
+		{
+			UPackage* Package = *It;
+			if (!Package || Package->HasAnyFlags(RF_Transient) || Package == GetTransientPackage())
+			{
+				continue;
+			}
+			if (!FPackageName::IsValidLongPackageName(Package->GetName()))
+			{
+				continue;
+			}
+			Packages.AddUnique(Package);
+		}
+	}
+
+	const int32 TotalPackages = Packages.Num();
+	Result.bPackagesTruncated = TotalPackages > MaxPackages;
+
+	int32 Reported = 0;
+	for (UPackage* Package : Packages)
+	{
+		if (Reported >= MaxPackages)
+		{
+			break;
+		}
+		if (!Package)
+		{
+			continue;
+		}
+
+		FUE5MCPPackageState State;
+		State.PackageName = Package->GetName();
+		State.bDirty = Package->IsDirty();
+		State.Filename = USourceControlHelpers::PackageFilename(State.PackageName);
+		if (Result.SourceControl.bAvailable && !State.Filename.IsEmpty())
+		{
+			const FSourceControlStatePtr SCState = Provider.GetState(State.Filename, EStateCacheUsage::Use);
+			State.SourceControlState = ClassifySourceControlState(SCState);
+		}
+		else
+		{
+			State.SourceControlState = TEXT("source_control_disabled");
+		}
+		Result.Packages.Add(MoveTemp(State));
+		++Reported;
+	}
+
+	Result.bSuccess = true;
+	Result.ChangedCount = 0;
+	Result.Message = FString::Printf(
+		TEXT("get_package_status: %d of %d package(s)%s; source control %s (provider '%s')%s (read-only)"),
+		Result.Packages.Num(), TotalPackages,
+		bDirtyOnly ? TEXT(" (dirty only)") : TEXT(""),
+		Result.SourceControl.bAvailable
+			? TEXT("available")
+			: (Result.SourceControl.bEnabled ? TEXT("enabled but unavailable") : TEXT("disabled")),
+		*Result.SourceControl.ProviderName,
+		Result.bPackagesTruncated ? TEXT(" (truncated at cap)") : TEXT(""));
 	return Result;
 }
 

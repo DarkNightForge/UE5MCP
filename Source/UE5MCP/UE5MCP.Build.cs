@@ -26,6 +26,7 @@ public class UE5MCP : ModuleRules
 			"HTTPServer",
 			"Slate",
 			"SlateCore",
+			"SourceControl",
 			"Json",
 			"JsonUtilities"
 		});

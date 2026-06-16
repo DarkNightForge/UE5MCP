@@ -11,6 +11,8 @@ const TArray<FUE5MCPToolDescriptor>& FUE5MCPToolRegistry::GetTools()
 			{ TEXT("class_path"), TEXT("label_contains"), TEXT("tag"), TEXT("folder_path"), TEXT("selected_only"), TEXT("max_results") }, /*bRequiresTargets=*/false, /*bAcceptsTargets=*/false },
 		{ TEXT("read_logs"), EUE5MCPActionType::ReadLogs, EUE5MCPRiskLevel::ReadOnly,
 			{ TEXT("max_lines"), TEXT("contains") }, /*bRequiresTargets=*/false, /*bAcceptsTargets=*/false },
+		{ TEXT("get_package_status"), EUE5MCPActionType::GetPackageStatus, EUE5MCPRiskLevel::ReadOnly,
+			{ TEXT("max_packages"), TEXT("dirty_only") }, /*bRequiresTargets=*/false, /*bAcceptsTargets=*/false },
 		{ TEXT("select_actors"), EUE5MCPActionType::SelectActors, EUE5MCPRiskLevel::LowMutation,
 			{}, /*bRequiresTargets=*/true },
 		{ TEXT("set_actor_folder"), EUE5MCPActionType::SetActorFolder, EUE5MCPRiskLevel::LowMutation,
