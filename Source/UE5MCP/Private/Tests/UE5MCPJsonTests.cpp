@@ -245,6 +245,39 @@ bool FUE5MCPJsonParseGetPropertiesTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPJsonParseGetComponentsTest,
+	"UE5MCP.Json.ParsesGetActorComponentsQuery", UE5MCPTests::KernelTestFlags)
+bool FUE5MCPJsonParseGetComponentsTest::RunTest(const FString& Parameters)
+{
+	const FString Body = TEXT(R"json({
+		"schema_version": 1,
+		"summary": "Inspect components",
+		"requires_approval": false,
+		"actions": [
+			{
+				"id": "c1",
+				"tool": "get_actor_components",
+				"risk": "read_only",
+				"targets": ["PersistentLevel.Light_1"],
+				"params": { "max_components": 12 }
+			}
+		]
+	})json");
+
+	FUE5MCPPlanRequest Request;
+	TArray<FString> Errors;
+	TestTrue(TEXT("Envelope parses"), UE5MCPJson::ParsePlanRequest(Body, Request, Errors));
+	TestEqual(TEXT("No parse errors"), Errors.Num(), 0);
+	TestEqual(TEXT("one action"), Request.Actions.Num(), 1);
+	if (Request.Actions.Num() == 1)
+	{
+		TestEqual(TEXT("max_components parsed"), Request.Actions[0].GetComponentsQuery.MaxComponents, 12);
+		TestEqual(TEXT("one target path carried"), Request.Actions[0].TargetPaths.Num(), 1);
+	}
+
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPJsonParseTransformTest,
 	"UE5MCP.Json.ParsesTransformParams", UE5MCPTests::KernelTestFlags)
 bool FUE5MCPJsonParseTransformTest::RunTest(const FString& Parameters)

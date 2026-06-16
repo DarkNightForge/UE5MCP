@@ -48,7 +48,7 @@ test project):
 
 | Tier | Tools | Behavior |
 |---|---|---|
-| ReadOnly | `get_selection`, `find_actors`, `read_logs`, `get_package_status`, `get_actor_properties`, `preview_actions` | on `permissions.allow` → never prompt |
+| ReadOnly | `get_selection`, `find_actors`, `read_logs`, `get_package_status`, `get_actor_properties`, `get_actor_components`, `preview_actions` | on `permissions.allow` → never prompt |
 | LowMutation | `select_actors`, `set_actor_folder`, `set_actor_label`, `add_actor_tags`, `remove_actor_tags`, `set_actor_property`, `set_actor_transform`, `duplicate_actor_with_offset`, `spawn_actor_from_class` | unlisted → native prompt per call; user may session-allowlist |
 | Destructive | `delete_actor` | on `permissions.ask` → ALWAYS prompts; ask beats session-allows and even `--allowedTools` (verified live) |
 

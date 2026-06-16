@@ -14,6 +14,7 @@ enum class EUE5MCPActionType : uint8
 	ReadLogs,
 	GetPackageStatus,
 	GetActorProperties,
+	GetActorComponents,
 	SelectActors,
 	SetActorFolder,
 	SetActorLabel,
@@ -146,6 +147,28 @@ struct FUE5MCPPropertySummary
 	double SuggestedMax = 0.0;
 };
 
+/** Bounded query parameters for the get_actor_components read-only discovery tool.
+ *  Lists the components of the first valid target actor, so an agent can learn the
+ *  component names/classes to address with set_actor_property / get_actor_properties. */
+struct FUE5MCPGetComponentsQuery
+{
+	/** Cap on returned components; the executor clamps to [1, MaxComponentResults]. */
+	int32 MaxComponents = 50;
+};
+
+/** One component row returned by get_actor_components. CreationMethod is a stable
+ *  machine token ("native" / "blueprint_template" / "construction_script" /
+ *  "instance"); EditableInstance reflects whether the editor allows per-instance edits. */
+struct FUE5MCPComponentSummary
+{
+	FString Name;
+	FString ClassPath;
+	FString CreationMethod;
+	FString AttachParent;
+	TArray<FName> ComponentTags;
+	bool bEditableInstance = false;
+};
+
 /** A typed value for set_actor_property, tagged by the JSON kind the client sent.
  *  The validator checks this kind against the allowlist entry's declared type; the
  *  executor writes it through reflection only after that match holds. */
@@ -207,6 +230,7 @@ struct FUE5MCPAction
 	FUE5MCPReadLogsQuery ReadLogsQuery;
 	FUE5MCPPackageStatusQuery PackageQuery;
 	FUE5MCPGetPropertiesQuery GetPropertiesQuery;
+	FUE5MCPGetComponentsQuery GetComponentsQuery;
 	FUE5MCPTransformDelta Transform;
 	FVector DuplicateOffset = FVector::ZeroVector;
 	FString SpawnClassPath;
@@ -257,6 +281,11 @@ struct FUE5MCPActionResult
 	FString InspectedOwnerClass;
 	TArray<FUE5MCPPropertySummary> Properties;
 	bool bPropertiesTruncated = false;
+	/** Populated by get_actor_components only: the inspected actor's class path is
+	 *  reported via InspectedOwnerClass; these carry the component rows + cap flag. */
+	bool bHasComponents = false;
+	TArray<FUE5MCPComponentSummary> Components;
+	bool bComponentsTruncated = false;
 };
 
 struct FUE5MCPExecutionResult
@@ -331,6 +360,7 @@ struct FUE5MCPActionRequest
 	FUE5MCPReadLogsQuery ReadLogsQuery;
 	FUE5MCPPackageStatusQuery PackageQuery;
 	FUE5MCPGetPropertiesQuery GetPropertiesQuery;
+	FUE5MCPGetComponentsQuery GetComponentsQuery;
 	FUE5MCPTransformDelta Transform;
 	bool bHasDuplicateOffset = false;
 	FVector DuplicateOffset = FVector::ZeroVector;

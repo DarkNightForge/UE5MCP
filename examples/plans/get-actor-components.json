@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "summary": "List a selected actor's components to find the one to edit",
+  "requires_approval": false,
+  "requires_second_confirmation": false,
+  "actions": [
+    {
+      "id": "get-actor-components-01",
+      "tool": "get_actor_components",
+      "risk": "read_only",
+      "targets": ["PersistentLevel.PointLight_1"],
+      "params": {
+        "max_components": 50
+      }
+    }
+  ]
+}

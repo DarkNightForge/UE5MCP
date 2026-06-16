@@ -11,7 +11,8 @@
 //
 // APPROVAL MODEL (mirrors the plugin's risk tiers via tool naming):
 //   read_only   tools (get_selection, find_actors, read_logs,
-//               get_package_status, get_actor_properties, preview_actions)
+//               get_package_status, get_actor_properties, get_actor_components,
+//               preview_actions)
 //               → safe to allowlist; never mutate.
 //   low_risk    tools (select_actors, set_actor_folder, set_actor_label,
 //               add_actor_tags, remove_actor_tags, set_actor_property,
@@ -128,6 +129,21 @@ const TOOLS = [
       additionalProperties: false,
     },
     annotations: { title: 'Get actor properties', readOnlyHint: true },
+  },
+  {
+    name: 'get_actor_components',
+    risk: 'read_only',
+    description: 'List the components of an actor — read-only, capped. Each row reports name, class_path, creation_method (native / blueprint_template / construction_script / instance), attach_parent (for scene components), component_tags, and editable_instance (whether the editor allows per-instance edits). Use this to discover the exact component name/class to target with get_actor_properties or set_actor_property. Inspects the first target actor.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        actor_paths: ACTOR_PATHS_SCHEMA,
+        max_components: { type: 'number', description: 'Max components to return (default 50, max 500).' },
+      },
+      required: ['actor_paths'],
+      additionalProperties: false,
+    },
+    annotations: { title: 'Get actor components', readOnlyHint: true },
   },
   {
     name: 'preview_actions',
@@ -404,6 +420,7 @@ const PLUGIN_TOOL_RISK = {
   read_logs: 'read_only',
   get_package_status: 'read_only',
   get_actor_properties: 'read_only',
+  get_actor_components: 'read_only',
   select_actors: 'low_risk',
   set_actor_folder: 'low_risk',
   set_actor_label: 'low_risk',
@@ -591,6 +608,15 @@ const HANDLERS = {
     }
     return runReadOnlyPlan('List reflected properties of an actor.',
       makeAction('get_actor_properties', 'read_only', args.actor_paths, params));
+  },
+
+  async get_actor_components(args) {
+    const params = {};
+    for (const key of ['max_components']) {
+      if (args[key] !== undefined) params[key] = args[key];
+    }
+    return runReadOnlyPlan('List the components of an actor.',
+      makeAction('get_actor_components', 'read_only', args.actor_paths, params));
   },
 
   async preview_actions(args) {

@@ -60,6 +60,9 @@ class ExampleFileTests(unittest.TestCase):
     def test_get_actor_properties_is_valid(self):
         self.assertEqual(validate_plan(load_example("get-actor-properties.json")), [])
 
+    def test_get_actor_components_is_valid(self):
+        self.assertEqual(validate_plan(load_example("get-actor-components.json")), [])
+
     def test_invalid_examples_fail_for_documented_rules(self):
         problems = validate_plan(load_example("invalid-empty-targets.json"))
         self.assertIn("R6", rules(problems))
@@ -534,6 +537,29 @@ class GetActorPropertiesTests(unittest.TestCase):
         plan = self.plan()
         del plan["actions"][0]["params"]["component"]
         self.assertEqual(validate_plan(plan), [])
+
+
+class GetActorComponentsTests(unittest.TestCase):
+    def plan(self):
+        return load_example("get-actor-components.json")
+
+    def test_valid(self):
+        self.assertEqual(validate_plan(self.plan()), [])
+
+    def test_r6_requires_targets(self):
+        plan = self.plan()
+        plan["actions"][0]["targets"] = []
+        self.assertIn("R6", rules(validate_plan(plan)))
+
+    def test_r9_unknown_param(self):
+        plan = self.plan()
+        plan["actions"][0]["params"]["component"] = "/Script/Engine.PointLightComponent"
+        self.assertIn("R9", rules(validate_plan(plan)))
+
+    def test_r9_max_components_must_be_int(self):
+        plan = self.plan()
+        plan["actions"][0]["params"]["max_components"] = True
+        self.assertIn("R9", rules(validate_plan(plan)))
 
 
 if __name__ == "__main__":

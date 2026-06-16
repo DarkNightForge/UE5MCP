@@ -300,6 +300,14 @@ FString FUE5MCPPreviewModel::BuildPreviewText(const FUE5MCPResolvedAction& Resol
 			Action.TargetActors.Num() > 1 ? *FString::Printf(TEXT(" (of %d)"), Action.TargetActors.Num()) : TEXT(""));
 	}
 
+	case EUE5MCPActionType::GetActorComponents:
+	{
+		const FUE5MCPGetComponentsQuery& Query = Action.GetComponentsQuery;
+		return FString::Printf(TEXT("get_actor_components: list up to %d component(s) of the first target%s (read-only)"),
+			Query.MaxComponents,
+			Action.TargetActors.Num() > 1 ? *FString::Printf(TEXT(" (of %d)"), Action.TargetActors.Num()) : TEXT(""));
+	}
+
 	case EUE5MCPActionType::FindActors:
 	{
 		const FUE5MCPFindActorsQuery& Query = Action.FindQuery;

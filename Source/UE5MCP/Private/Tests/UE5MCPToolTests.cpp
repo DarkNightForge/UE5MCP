@@ -425,4 +425,62 @@ bool FUE5MCPGetActorPropertiesTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPGetActorComponentsTest,
+	"UE5MCP.Tools.GetActorComponentsListsInstanceAndNative", UE5MCPTests::KernelTestFlags)
+bool FUE5MCPGetActorComponentsTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+	if (!TestNotNull(TEXT("CreateNewMap returned a world"), World))
+	{
+		return false;
+	}
+
+	// A point light carries a NATIVE light component; add one INSTANCE component on top.
+	APointLight* Light = World->SpawnActor<APointLight>();
+	if (!TestNotNull(TEXT("Spawned a point light"), Light))
+	{
+		return false;
+	}
+	UPointLightComponent* Extra = NewObject<UPointLightComponent>(Light, TEXT("ExtraFill"), RF_Transactional);
+	Extra->RegisterComponent();
+	Light->AddInstanceComponent(Extra);
+
+	FUE5MCPResolvedAction Resolved;
+	Resolved.Action.Id = TEXT("test-get-components");
+	Resolved.Action.Type = EUE5MCPActionType::GetActorComponents;
+	Resolved.Action.Risk = EUE5MCPRiskLevel::ReadOnly;
+	Resolved.Action.GetComponentsQuery.MaxComponents = 50;
+	Resolved.Action.TargetActors.Add(Light);
+
+	const FUE5MCPExecutionResult Result =
+		FUE5MCPActionExecutor::ExecuteApprovedPlan(UE5MCPTests::WrapPlanForTest(Resolved));
+	TestTrue(TEXT("Read-only get_actor_components executed"), Result.bSuccess);
+	TestEqual(TEXT("One action result"), Result.ActionResults.Num(), 1);
+	if (Result.ActionResults.Num() == 1)
+	{
+		const FUE5MCPActionResult& Action = Result.ActionResults[0];
+		TestTrue(TEXT("Result carries components"), Action.bHasComponents);
+		TestTrue(TEXT("Inspected owner is the point light actor"),
+			Action.InspectedOwnerClass.Contains(TEXT("PointLight")));
+
+		bool bFoundNative = false;
+		bool bFoundInstance = false;
+		bool bAllHaveClass = true;
+		for (const FUE5MCPComponentSummary& Comp : Action.Components)
+		{
+			if (Comp.CreationMethod == TEXT("native")) { bFoundNative = true; }
+			if (Comp.Name == TEXT("ExtraFill") && Comp.CreationMethod == TEXT("instance")) { bFoundInstance = true; }
+			bAllHaveClass &= !Comp.ClassPath.IsEmpty();
+		}
+		TestTrue(TEXT("A native component is listed"), bFoundNative);
+		TestTrue(TEXT("The added instance component is listed with creation_method instance"), bFoundInstance);
+		TestTrue(TEXT("Every component row carries a class path"), bAllHaveClass);
+	}
+	TestTrue(TEXT("Message reports the read-only readback"),
+		Result.UserVisibleLogLines.ContainsByPredicate(
+			[](const FString& Line) { return Line.Contains(TEXT("get_actor_components")); }));
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

@@ -3,10 +3,12 @@
 #include "UE5MCPActionExecutor.h"
 
 #include "ScopedTransaction.h"
+#include "ComponentInstanceDataCache.h"
 #include "Components/ActorComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Editor.h"
+#include "Kismet2/ComponentEditorUtils.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
@@ -93,6 +95,9 @@ FUE5MCPExecutionResult FUE5MCPActionExecutor::ExecuteApprovedPlan(const FUE5MCPV
 			break;
 		case EUE5MCPActionType::GetActorProperties:
 			ActionResult = ExecuteGetActorProperties(ResolvedAction);
+			break;
+		case EUE5MCPActionType::GetActorComponents:
+			ActionResult = ExecuteGetActorComponents(ResolvedAction);
 			break;
 		case EUE5MCPActionType::SelectActors:
 			ActionResult = ExecuteSelectActors(ResolvedAction);
@@ -1376,6 +1381,92 @@ FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteGetActorProperties(const FUE5M
 		*Actor->GetActorLabel(),
 		RequestedCount > 1 ? *FString::Printf(TEXT(" [inspected first of %d targets]"), RequestedCount) : TEXT(""),
 		Result.bPropertiesTruncated ? TEXT(" (truncated at cap)") : TEXT(""));
+	return Result;
+}
+
+namespace
+{
+	/** Hard cap on components get_actor_components returns; a client cannot ask for more. */
+	constexpr int32 MaxComponentResults = 500;
+
+	/** Stable machine token for how a component was created. */
+	FString CreationMethodToken(EComponentCreationMethod Method)
+	{
+		switch (Method)
+		{
+		case EComponentCreationMethod::Native: return TEXT("native");
+		case EComponentCreationMethod::SimpleConstructionScript: return TEXT("blueprint_template");
+		case EComponentCreationMethod::UserConstructionScript: return TEXT("construction_script");
+		case EComponentCreationMethod::Instance: return TEXT("instance");
+		}
+		return TEXT("unknown");
+	}
+}
+
+FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteGetActorComponents(const FUE5MCPResolvedAction& ResolvedAction)
+{
+	const FUE5MCPAction& Action = ResolvedAction.Action;
+	FUE5MCPActionResult Result;
+	Result.ActionId = Action.Id;
+	Result.bHasComponents = true;
+
+	const int32 MaxComponents = FMath::Clamp(Action.GetComponentsQuery.MaxComponents, 1, MaxComponentResults);
+
+	// Components are per-actor-instance, but a flat list across heterogeneous targets
+	// would be noise; like get_actor_properties this inspects the FIRST valid target
+	// ("inspect this actor"). The message reports how many targets were given.
+	AActor* Actor = nullptr;
+	const int32 RequestedCount = Action.TargetActors.Num();
+	for (const TWeakObjectPtr<AActor>& ActorPtr : Action.TargetActors)
+	{
+		if (AActor* Candidate = ActorPtr.Get())
+		{
+			if (IsValid(Candidate)) { Actor = Candidate; break; }
+		}
+	}
+	if (!Actor)
+	{
+		Result.RefusalCode = TEXT("no_valid_targets");
+		Result.Message = TEXT("Rejected get_actor_components: no valid target actor in the editor world.");
+		return Result;
+	}
+
+	Result.InspectedOwnerClass = Actor->GetClass()->GetPathName();
+
+	TArray<UActorComponent*> Components;
+	Actor->GetComponents(Components);
+	const int32 TotalComponents = Components.Num();
+
+	for (UActorComponent* Comp : Components)
+	{
+		if (!IsValid(Comp)) { continue; }
+		if (Result.Components.Num() >= MaxComponents) { break; }
+
+		FUE5MCPComponentSummary Summary;
+		Summary.Name = Comp->GetName();
+		Summary.ClassPath = Comp->GetClass()->GetPathName();
+		Summary.CreationMethod = CreationMethodToken(Comp->CreationMethod);
+		Summary.ComponentTags = Comp->ComponentTags;
+		if (const USceneComponent* SceneComp = Cast<USceneComponent>(Comp))
+		{
+			if (const USceneComponent* Parent = SceneComp->GetAttachParent())
+			{
+				Summary.AttachParent = Parent->GetName();
+			}
+		}
+		Summary.bEditableInstance = FComponentEditorUtils::CanEditComponentInstance(Comp, nullptr, /*bAllowUserContructionScript=*/false);
+		Result.Components.Add(MoveTemp(Summary));
+	}
+
+	Result.bComponentsTruncated = TotalComponents > Result.Components.Num();
+	Result.bSuccess = true;
+	Result.Message = FString::Printf(
+		TEXT("get_actor_components: %d of %d component(s) on %s (%s)%s%s (read-only)"),
+		Result.Components.Num(), TotalComponents,
+		*Actor->GetActorLabel(),
+		*Actor->GetClass()->GetName(),
+		RequestedCount > 1 ? *FString::Printf(TEXT(" [inspected first of %d targets]"), RequestedCount) : TEXT(""),
+		Result.bComponentsTruncated ? TEXT(" (truncated at cap)") : TEXT(""));
 	return Result;
 }
 

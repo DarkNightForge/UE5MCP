@@ -440,6 +440,10 @@ bool UE5MCPJson::ParsePlanRequest(const FString& Body, FUE5MCPPlanRequest& OutRe
 				{
 					ActionRequest.GetPropertiesQuery.MaxProperties = static_cast<int32>(NumberValue);
 				}
+				else if (Key == TEXT("max_components") && Value->TryGetNumber(NumberValue))
+				{
+					ActionRequest.GetComponentsQuery.MaxComponents = static_cast<int32>(NumberValue);
+				}
 			}
 
 			// find_actors uses folder_path as its folder filter as well.
@@ -572,6 +576,32 @@ FString UE5MCPJson::SerializeExecutionResult(const FUE5MCPExecutionResult& Resul
 			}
 			ResultObject->SetArrayField(TEXT("properties"), PropertyValues);
 			ResultObject->SetBoolField(TEXT("properties_truncated"), ActionResult.bPropertiesTruncated);
+		}
+		if (ActionResult.bHasComponents)
+		{
+			ResultObject->SetStringField(TEXT("inspected_owner_class"), ActionResult.InspectedOwnerClass);
+			TArray<TSharedPtr<FJsonValue>> ComponentValues;
+			for (const FUE5MCPComponentSummary& Component : ActionResult.Components)
+			{
+				TSharedRef<FJsonObject> CompObject = MakeShared<FJsonObject>();
+				CompObject->SetStringField(TEXT("name"), Component.Name);
+				CompObject->SetStringField(TEXT("class_path"), Component.ClassPath);
+				CompObject->SetStringField(TEXT("creation_method"), Component.CreationMethod);
+				CompObject->SetBoolField(TEXT("editable_instance"), Component.bEditableInstance);
+				if (!Component.AttachParent.IsEmpty())
+				{
+					CompObject->SetStringField(TEXT("attach_parent"), Component.AttachParent);
+				}
+				TArray<TSharedPtr<FJsonValue>> TagValues;
+				for (const FName& Tag : Component.ComponentTags)
+				{
+					TagValues.Add(MakeShared<FJsonValueString>(Tag.ToString()));
+				}
+				CompObject->SetArrayField(TEXT("component_tags"), TagValues);
+				ComponentValues.Add(MakeShared<FJsonValueObject>(CompObject));
+			}
+			ResultObject->SetArrayField(TEXT("components"), ComponentValues);
+			ResultObject->SetBoolField(TEXT("components_truncated"), ActionResult.bComponentsTruncated);
 		}
 		ActionResults.Add(MakeShared<FJsonValueObject>(ResultObject));
 	}

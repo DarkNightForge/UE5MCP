@@ -115,6 +115,12 @@ REGISTRY = {
         "requires_targets": True,
         "accepts_targets": True,
     },
+    "get_actor_components": {
+        "risk": READ_ONLY,
+        "params": {"max_components": int},
+        "requires_targets": True,
+        "accepts_targets": True,
+    },
     "select_actors": {
         "risk": LOW_RISK,
         "params": {},

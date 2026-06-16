@@ -253,6 +253,7 @@ FUE5MCPPlanValidationResult FUE5MCPPlanValidator::ValidateAndResolve(const FUE5M
 		Resolved.Action.ReadLogsQuery = ActionRequest.ReadLogsQuery;
 		Resolved.Action.PackageQuery = ActionRequest.PackageQuery;
 		Resolved.Action.GetPropertiesQuery = ActionRequest.GetPropertiesQuery;
+		Resolved.Action.GetComponentsQuery = ActionRequest.GetComponentsQuery;
 		Resolved.Action.Transform = ActionRequest.Transform;
 		Resolved.Action.DuplicateOffset = ActionRequest.DuplicateOffset;
 		Resolved.Action.SpawnClassPath = ActionRequest.SpawnClassPath;
