@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "summary": "Check out the level package so a blocked edit can be saved",
+  "requires_approval": true,
+  "requires_second_confirmation": false,
+  "context_fingerprint": {
+    "scene": "DemoScene",
+    "selected_object_paths": []
+  },
+  "actions": [
+    {
+      "id": "check-out-package-01",
+      "tool": "check_out_package",
+      "risk": "low_risk",
+      "targets": [],
+      "params": {
+        "package_name": "/Game/Maps/DemoScene"
+      }
+    }
+  ]
+}

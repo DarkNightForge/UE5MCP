@@ -128,6 +128,12 @@ REGISTRY = {
         "requires_targets": False,
         "accepts_targets": False,
     },
+    "check_out_package": {
+        "risk": LOW_RISK,
+        "params": {"package_name": str},
+        "requires_targets": False,
+        "accepts_targets": False,
+    },
     "select_actors": {
         "risk": LOW_RISK,
         "params": {},
@@ -461,6 +467,12 @@ def validate_plan(plan):
                 )
             if "value" not in params:
                 problems.append(f"R9: {where} missing required param 'value'")
+        elif tool == "check_out_package":
+            pkg = params.get("package_name")
+            if not isinstance(pkg, str) or not pkg.strip():
+                problems.append(
+                    f"R9: {where} missing required non-empty param 'package_name'"
+                )
         elif tool == "set_actor_transform":
             if not any(k in params for k in ("location", "rotation", "scale")):
                 problems.append(

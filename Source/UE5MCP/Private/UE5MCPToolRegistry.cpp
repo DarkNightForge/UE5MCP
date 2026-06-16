@@ -19,6 +19,8 @@ const TArray<FUE5MCPToolDescriptor>& FUE5MCPToolRegistry::GetTools()
 			{ TEXT("max_components") }, /*bRequiresTargets=*/true, /*bAcceptsTargets=*/true },
 		{ TEXT("list_capabilities"), EUE5MCPActionType::ListCapabilities, EUE5MCPRiskLevel::ReadOnly,
 			{}, /*bRequiresTargets=*/false, /*bAcceptsTargets=*/false },
+		{ TEXT("check_out_package"), EUE5MCPActionType::CheckOutPackage, EUE5MCPRiskLevel::LowMutation,
+			{ TEXT("package_name") }, /*bRequiresTargets=*/false, /*bAcceptsTargets=*/false },
 		{ TEXT("select_actors"), EUE5MCPActionType::SelectActors, EUE5MCPRiskLevel::LowMutation,
 			{}, /*bRequiresTargets=*/true },
 		{ TEXT("set_actor_folder"), EUE5MCPActionType::SetActorFolder, EUE5MCPRiskLevel::LowMutation,

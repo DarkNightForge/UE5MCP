@@ -547,6 +547,58 @@ bool FUE5MCPUnsavedPackageMutationAllowedTest::RunTest(const FString& Parameters
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPCheckOutPackageGovernanceTest,
+	"UE5MCP.Executor.CheckOutPackageGovernanceRefusals", UE5MCPTests::KernelTestFlags)
+bool FUE5MCPCheckOutPackageGovernanceTest::RunTest(const FString& Parameters)
+{
+	// A world is needed so the upfront mutation guard (PIE/editor-state) passes and the
+	// check_out_package-specific refusals are reached.
+	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+	if (!TestNotNull(TEXT("CreateNewMap returned a world"), World))
+	{
+		return false;
+	}
+
+	auto BuildCheckout = []()
+	{
+		FUE5MCPResolvedAction Resolved;
+		Resolved.Action.Id = TEXT("test-checkout");
+		Resolved.Action.Type = EUE5MCPActionType::CheckOutPackage;
+		Resolved.Action.Risk = EUE5MCPRiskLevel::LowMutation;
+		Resolved.Action.PackageName = TEXT("/Game/Maps/DoesNotMatterForGovernance");
+		return UE5MCPTests::WrapPlanForTest(Resolved);
+	};
+
+	UUE5MCPSettings* Settings = GetMutableDefault<UUE5MCPSettings>();
+	const bool bOriginal = Settings->bAllowSourceControlCheckout;
+
+	// --- Disabled (default): the opt-in gate refuses before touching source control ---
+	Settings->bAllowSourceControlCheckout = false;
+	const FUE5MCPExecutionResult Disabled = FUE5MCPActionExecutor::ExecuteApprovedPlan(BuildCheckout());
+	TestFalse(TEXT("Checkout refused when disabled"), Disabled.bSuccess);
+	if (Disabled.ActionResults.Num() == 1)
+	{
+		TestEqual(TEXT("Refusal code is source_control_checkout_disabled"),
+			Disabled.ActionResults[0].RefusalCode, FString(TEXT("source_control_checkout_disabled")));
+	}
+
+	// --- Enabled but no source control available in this editor: still refused ---
+	Settings->bAllowSourceControlCheckout = true;
+	const FUE5MCPExecutionResult NoSC = FUE5MCPActionExecutor::ExecuteApprovedPlan(BuildCheckout());
+	TestFalse(TEXT("Checkout refused without source control"), NoSC.bSuccess);
+	if (NoSC.ActionResults.Num() == 1)
+	{
+		// The headless editor has no SC provider, so the unavailable gate fires (before
+		// any network call). If a provider were present, package_not_found would fire here.
+		const FString& Code = NoSC.ActionResults[0].RefusalCode;
+		TestTrue(TEXT("Refusal is a governance refusal, never a silent success"),
+			Code == TEXT("source_control_unavailable") || Code == TEXT("package_not_found"));
+	}
+
+	Settings->bAllowSourceControlCheckout = bOriginal;
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPExecutorRejectsUnvalidatedPlanTest,
 	"UE5MCP.Executor.RejectsUnvalidatedPlan", UE5MCPTests::KernelTestFlags)
 bool FUE5MCPExecutorRejectsUnvalidatedPlanTest::RunTest(const FString& Parameters)

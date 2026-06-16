@@ -45,6 +45,7 @@ private:
 	static FUE5MCPActionResult ExecuteGetActorProperties(const FUE5MCPResolvedAction& ResolvedAction);
 	static FUE5MCPActionResult ExecuteGetActorComponents(const FUE5MCPResolvedAction& ResolvedAction);
 	static FUE5MCPActionResult ExecuteListCapabilities(const FUE5MCPResolvedAction& ResolvedAction);
+	static FUE5MCPActionResult ExecuteCheckOutPackage(const FUE5MCPResolvedAction& ResolvedAction);
 	static FUE5MCPActionResult ExecuteSelectActors(const FUE5MCPResolvedAction& ResolvedAction);
 	static FUE5MCPActionResult ExecuteDuplicateActorWithOffset(const FUE5MCPResolvedAction& ResolvedAction);
 	static FUE5MCPActionResult ExecuteSpawnActorFromClass(const FUE5MCPResolvedAction& ResolvedAction);

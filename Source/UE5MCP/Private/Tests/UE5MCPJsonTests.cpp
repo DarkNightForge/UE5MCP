@@ -276,6 +276,33 @@ bool FUE5MCPJsonParseComponentNameTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPJsonParseCheckOutPackageTest,
+	"UE5MCP.Json.ParsesCheckOutPackage", UE5MCPTests::KernelTestFlags)
+bool FUE5MCPJsonParseCheckOutPackageTest::RunTest(const FString& Parameters)
+{
+	const FString Body = TEXT(R"json({
+		"schema_version": 1,
+		"summary": "Check out a level",
+		"requires_approval": true,
+		"context_fingerprint": { "scene": "S", "selected_object_paths": [] },
+		"actions": [
+			{ "id": "co", "tool": "check_out_package", "risk": "low_risk", "targets": [],
+			  "params": { "package_name": "/Game/Maps/Demo" } }
+		]
+	})json");
+
+	FUE5MCPPlanRequest Request;
+	TArray<FString> Errors;
+	TestTrue(TEXT("Envelope parses"), UE5MCPJson::ParsePlanRequest(Body, Request, Errors));
+	TestEqual(TEXT("No parse errors"), Errors.Num(), 0);
+	if (TestEqual(TEXT("one action"), Request.Actions.Num(), 1))
+	{
+		TestEqual(TEXT("package_name parsed"), Request.Actions[0].PackageName, FString(TEXT("/Game/Maps/Demo")));
+	}
+
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPJsonParseGetComponentsTest,
 	"UE5MCP.Json.ParsesGetActorComponentsQuery", UE5MCPTests::KernelTestFlags)
 bool FUE5MCPJsonParseGetComponentsTest::RunTest(const FString& Parameters)

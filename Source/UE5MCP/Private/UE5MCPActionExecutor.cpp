@@ -112,6 +112,9 @@ FUE5MCPExecutionResult FUE5MCPActionExecutor::ExecuteApprovedPlan(const FUE5MCPV
 		case EUE5MCPActionType::ListCapabilities:
 			ActionResult = ExecuteListCapabilities(ResolvedAction);
 			break;
+		case EUE5MCPActionType::CheckOutPackage:
+			ActionResult = ExecuteCheckOutPackage(ResolvedAction);
+			break;
 		case EUE5MCPActionType::SelectActors:
 			ActionResult = ExecuteSelectActors(ResolvedAction);
 			break;
@@ -1370,9 +1373,12 @@ FString FUE5MCPActionExecutor::DescribeActionPackages(const FUE5MCPResolvedActio
 bool FUE5MCPActionExecutor::IsBlockedByPackageWritePolicy(const FUE5MCPResolvedAction& ResolvedAction, FUE5MCPActionResult& OutResult)
 {
 	const FUE5MCPAction& Action = ResolvedAction.Action;
-	// Only mutations that actually dirty a package are gated. Read-only tools and
-	// select_actors (selection is transient, never saved) are never blocked.
-	if (Action.Risk == EUE5MCPRiskLevel::ReadOnly || Action.Type == EUE5MCPActionType::SelectActors)
+	// Only mutations that actually dirty a package are gated. Read-only tools,
+	// select_actors (selection is transient, never saved), and check_out_package
+	// (which MAKES a package writable — gating it would be circular) are never blocked.
+	if (Action.Risk == EUE5MCPRiskLevel::ReadOnly
+		|| Action.Type == EUE5MCPActionType::SelectActors
+		|| Action.Type == EUE5MCPActionType::CheckOutPackage)
 	{
 		return false;
 	}
@@ -1690,6 +1696,87 @@ FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteListCapabilities(const FUE5MCP
 		Caps.Tools.Num(), Caps.SpawnClassAllowlist.Num(), Caps.SpawnMeshAllowlist.Num(),
 		Caps.PropertyAllowlist.Num(),
 		Caps.bBlockMutationsToUnwritablePackages ? TEXT("on") : TEXT("off"));
+	return Result;
+}
+
+FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteCheckOutPackage(const FUE5MCPResolvedAction& ResolvedAction)
+{
+	const FUE5MCPAction& Action = ResolvedAction.Action;
+	FUE5MCPActionResult Result;
+	Result.ActionId = Action.Id;
+
+	// Shape guard (defence in depth — the validator already requires it).
+	if (Action.PackageName.IsEmpty())
+	{
+		Result.RefusalCode = TEXT("invalid_checkout_request");
+		Result.Message = TEXT("Rejected check_out_package: requires a non-empty 'package_name'.");
+		return Result;
+	}
+
+	// Opt-in gate: the only action that issues a real source-control write is off until
+	// a project consciously enables it.
+	if (!GetDefault<UUE5MCPSettings>()->bAllowSourceControlCheckout)
+	{
+		Result.RefusalCode = TEXT("source_control_checkout_disabled");
+		Result.Message = TEXT("Rejected check_out_package: source-control checkout is disabled. Enable it in Project Settings > Plugins > UE5MCP (Package Policy).");
+		return Result;
+	}
+
+	ISourceControlModule& SCModule = ISourceControlModule::Get();
+	ISourceControlProvider& Provider = SCModule.GetProvider();
+	if (!SCModule.IsEnabled() || !Provider.IsAvailable())
+	{
+		Result.RefusalCode = TEXT("source_control_unavailable");
+		Result.Message = TEXT("Rejected check_out_package: source control is not enabled/available in this editor.");
+		return Result;
+	}
+
+	// Resolve the package to a real on-disk file.
+	FString Filename;
+	if (!FPackageName::DoesPackageExist(Action.PackageName, &Filename) || Filename.IsEmpty())
+	{
+		Result.RefusalCode = TEXT("package_not_found");
+		Result.Message = FString::Printf(TEXT("Rejected check_out_package: package '%s' does not exist on disk."), *Action.PackageName);
+		return Result;
+	}
+
+	// Inspect the cached state first (no network call) for clear, early refusals.
+	const FSourceControlStatePtr State = Provider.GetState(Filename, EStateCacheUsage::Use);
+	if (State.IsValid())
+	{
+		if (!State->IsSourceControlled())
+		{
+			Result.RefusalCode = TEXT("package_not_source_controlled");
+			Result.Message = FString::Printf(TEXT("Rejected check_out_package: package '%s' is not under source control."), *Action.PackageName);
+			return Result;
+		}
+		if (State->IsCheckedOutOther())
+		{
+			Result.RefusalCode = TEXT("checked_out_by_other");
+			Result.Message = FString::Printf(TEXT("Rejected check_out_package: package '%s' is checked out by another user."), *Action.PackageName);
+			return Result;
+		}
+		if (State->IsCheckedOut())
+		{
+			// Already ours — a no-op success, not an error.
+			Result.bSuccess = true;
+			Result.Message = FString::Printf(TEXT("check_out_package: '%s' was already checked out (no-op). (source-control write; not editor-undoable)"), *Action.PackageName);
+			return Result;
+		}
+	}
+
+	// The real write: a synchronous source-control checkout (a network operation). This
+	// is the one tool allowed to hit the provider for a write — explicit, opt-in, approved.
+	if (!USourceControlHelpers::CheckOutFile(Filename, /*bSilent=*/true))
+	{
+		Result.RefusalCode = TEXT("checkout_failed");
+		Result.Message = FString::Printf(TEXT("Rejected check_out_package: source control could not check out '%s' (see source-control log)."), *Action.PackageName);
+		return Result;
+	}
+
+	Result.bSuccess = true;
+	Result.ChangedCount = 1;
+	Result.Message = FString::Printf(TEXT("check_out_package: checked out '%s' (source-control write; not editor-undoable — revert via source control)."), *Action.PackageName);
 	return Result;
 }
 

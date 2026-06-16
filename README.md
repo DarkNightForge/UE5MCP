@@ -29,7 +29,7 @@ We do **not** try to out-breadth the exec-everything approach. We win where brea
 
 ## Status — honest accounting
 
-- **Verified:** builds clean as a drop-in **project plugin** and passes **76/76** headless automation tests on **Unreal Engine 5.7.4** (Linux source build). Live runs with an external Claude Code client building and fully undoing an organized scene through the approval boundary.
+- **Verified:** builds clean as a drop-in **project plugin** and passes **78/78** headless automation tests on **Unreal Engine 5.7.4** (Linux source build). Live runs with an external Claude Code client building and fully undoing an organized scene through the approval boundary.
 - **Not yet verified:** Epic Games Launcher **binary** builds and **Windows**. Treat those as untested until confirmed.
 - **Beta, v0.1.** 8 typed actions today (see below). Breadth is the roadmap, not the claim.
 
@@ -67,10 +67,10 @@ Full walkthrough: [`docs/demo-live.md`](docs/demo-live.md). Architecture & safet
 
 ## The tools
 
-Eighteen MCP tools (`mcp__ue5mcp__*`), in three risk tiers:
+Nineteen MCP tools (`mcp__ue5mcp__*`), in three risk tiers:
 
 **Read-only** — `get_selection`, `find_actors`, `read_logs`, `get_package_status`, `get_actor_properties`, `get_actor_components`, `list_capabilities`, `preview_actions`
-**Low mutation** — `select_actors`, `set_actor_folder`, `set_actor_label`, `add_actor_tags`, `remove_actor_tags`, `set_actor_property` (allowlisted), `set_actor_transform`, `duplicate_actor_with_offset`, `spawn_actor_from_class` (class + mesh allowlisted)
+**Low mutation** — `select_actors`, `set_actor_folder`, `set_actor_label`, `add_actor_tags`, `remove_actor_tags`, `set_actor_property` (allowlisted), `set_actor_transform`, `duplicate_actor_with_offset`, `spawn_actor_from_class` (class + mesh allowlisted), `check_out_package` (opt-in source-control checkout)
 **Destructive** — `delete_actor`
 
 Mutating tools take a **typed action plan**; the plugin resolves targets, builds a human-readable preview (exact targets, counts, warnings), executes only on approval, wraps the batch in one transaction, and logs the result.

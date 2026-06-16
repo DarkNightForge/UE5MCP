@@ -320,6 +320,10 @@ FString FUE5MCPPreviewModel::BuildPreviewText(const FUE5MCPResolvedAction& Resol
 	case EUE5MCPActionType::ListCapabilities:
 		return TEXT("list_capabilities: report the live tool registry + configured allowlists/policy (read-only)");
 
+	case EUE5MCPActionType::CheckOutPackage:
+		return FString::Printf(TEXT("check_out_package: check out '%s' from source control (real SC write; NOT editor-undoable — revert via source control)"),
+			*Action.PackageName);
+
 	case EUE5MCPActionType::FindActors:
 	{
 		const FUE5MCPFindActorsQuery& Query = Action.FindQuery;

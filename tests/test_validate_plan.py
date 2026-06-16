@@ -66,6 +66,9 @@ class ExampleFileTests(unittest.TestCase):
     def test_list_capabilities_is_valid(self):
         self.assertEqual(validate_plan(load_example("list-capabilities.json")), [])
 
+    def test_check_out_package_is_valid(self):
+        self.assertEqual(validate_plan(load_example("check-out-package.json")), [])
+
     def test_invalid_examples_fail_for_documented_rules(self):
         problems = validate_plan(load_example("invalid-empty-targets.json"))
         self.assertIn("R6", rules(problems))
@@ -564,6 +567,29 @@ class ListCapabilitiesTests(unittest.TestCase):
         plan = self.plan()
         plan["actions"][0]["params"]["verbose"] = True
         self.assertIn("R9", rules(validate_plan(plan)))
+
+
+class CheckOutPackageTests(unittest.TestCase):
+    def plan(self):
+        return load_example("check-out-package.json")
+
+    def test_valid(self):
+        self.assertEqual(validate_plan(self.plan()), [])
+
+    def test_r9_requires_package_name(self):
+        plan = self.plan()
+        plan["actions"][0]["params"] = {}
+        self.assertIn("R9", rules(validate_plan(plan)))
+
+    def test_r9_empty_package_name(self):
+        plan = self.plan()
+        plan["actions"][0]["params"]["package_name"] = "   "
+        self.assertIn("R9", rules(validate_plan(plan)))
+
+    def test_r6_rejects_targets(self):
+        plan = self.plan()
+        plan["actions"][0]["targets"] = ["/Temp/U.U:PersistentLevel.A_0"]
+        self.assertIn("R6", rules(validate_plan(plan)))
 
 
 class SetActorPropertyParamsTests(unittest.TestCase):

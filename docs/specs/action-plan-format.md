@@ -65,6 +65,7 @@ action MUST be one of these names. Param keys are exactly those parsed in
 | `set_actor_transform` | `low_risk` | required | `location?: [x,y,z]`, `rotation?: [roll,pitch,yaw]`, `scale?: [x,y,z]` | Sets absolute transform components; omitted components stay unchanged; **≥1 component required** (an empty transform is a refused no-op) |
 | `duplicate_actor_with_offset` | `low_risk` | required | `offset: [x,y,z]` (required) | Duplicates each target once at source location + offset; returns the new actor paths |
 | `spawn_actor_from_class` | `low_risk` | rejected | `class_path: string` (required), `transforms: [instance,…]` (required, ≥1), `static_mesh?: string`, `label_base?: string` | Spawns ≤25 instances of an **allowlisted** class via `UWorld::SpawnActor` with `RF_Transactional`; returns the new actor paths |
+| `check_out_package` | `low_risk` | rejected | `package_name: string` (required, long package name) | Checks a package out of source control so a `package_not_writable`-blocked mutation can proceed. The ONLY tool that issues a real source-control write (a network op) and the only mutation that is NOT editor-undoable (revert via SC). Off unless `bAllowSourceControlCheckout` is enabled; even then refuses if SC is unavailable, the package is missing / not controlled / checked out by another, or the op fails. Already-ours is a no-op success |
 | `delete_actor` | `destructive` | required | — | Permanently deletes the target actors from the level; reversible only via editor Undo |
 
 Notes on params:
@@ -112,6 +113,7 @@ do not:
 | `set_actor_transform` | `low_risk` | registry `set_actor_transform` | |
 | `duplicate_actor_with_offset` | `low_risk` | registry `duplicate_actor_with_offset` | |
 | `spawn_actor_from_class` | `low_risk` | registry `spawn_actor_from_class` | |
+| `check_out_package` | `low_risk` | registry `check_out_package` | takes `package_name`; gated by `bAllowSourceControlCheckout` |
 | `delete_actor` | `destructive` | registry `delete_actor` | kept on the client permission "ask" list so it always prompts |
 
 `preview_actions` is **not** a plan `tool` and never appears in the `tool` field
@@ -174,7 +176,7 @@ violated.
 | R3 | Every `tool` exists in the registry |
 | R4 | Every action's `risk` equals the registry risk for its tool |
 | R5 | If any action mutates (risk ≠ `read_only`), `requires_approval` must be `true` |
-| R6 | A requires-targets tool (`get_actor_properties`, `get_actor_components`, `select_actors`, `set_actor_folder`, `set_actor_label`, `add_actor_tags`, `remove_actor_tags`, `set_actor_property`, `set_actor_transform`, `duplicate_actor_with_offset`, `delete_actor`) must have a non-empty `targets` list — note `get_actor_properties`/`get_actor_components` are read-only yet require targets; a no-target tool (`get_selection_context`, `find_actors`, `read_logs`, `get_package_status`, `list_capabilities`, `spawn_actor_from_class`) must NOT be given targets; **(live)** every target path must resolve to an actor in the running editor world |
+| R6 | A requires-targets tool (`get_actor_properties`, `get_actor_components`, `select_actors`, `set_actor_folder`, `set_actor_label`, `add_actor_tags`, `remove_actor_tags`, `set_actor_property`, `set_actor_transform`, `duplicate_actor_with_offset`, `delete_actor`) must have a non-empty `targets` list — note `get_actor_properties`/`get_actor_components` are read-only yet require targets; a no-target tool (`get_selection_context`, `find_actors`, `read_logs`, `get_package_status`, `list_capabilities`, `spawn_actor_from_class`, `check_out_package`) must NOT be given targets; **(live)** every target path must resolve to an actor in the running editor world |
 | R7 | If any action is `destructive`, `requires_second_confirmation` must be `true` |
 | R8 | Mutation plans must carry a `context_fingerprint` with a non-empty `scene` and a `selected_object_paths` list |
 | R9 | Params must be allowlisted for the tool, with required params present and correctly typed: `folder_path` a non-empty string; `set_actor_label` needs a non-empty `label`; `add_actor_tags`/`remove_actor_tags` need a non-empty `tags` array of non-empty strings; `set_actor_property` needs a non-empty `property` and a well-formed `value`; transform/offset/instance vectors arrays of 3 numbers; `set_actor_transform` needs ≥1 of `location`/`rotation`/`scale`; `duplicate_actor_with_offset` needs `offset`; `spawn_actor_from_class` needs `class_path` plus a non-empty `transforms` list (each instance with a `location`) |

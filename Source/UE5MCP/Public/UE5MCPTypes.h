@@ -16,6 +16,7 @@ enum class EUE5MCPActionType : uint8
 	GetActorProperties,
 	GetActorComponents,
 	ListCapabilities,
+	CheckOutPackage,
 	SelectActors,
 	SetActorFolder,
 	SetActorLabel,
@@ -271,6 +272,8 @@ struct FUE5MCPAction
 	 *  one specific component among several of the same class. Instance selector only —
 	 *  it never widens policy; the class is still allowlist-gated. */
 	FString PropertyComponentName;
+	/** check_out_package: the long package name to check out, e.g. "/Game/Maps/Demo". */
+	FString PackageName;
 	FUE5MCPPropertyValue PropertyValue;
 	FUE5MCPFindActorsQuery FindQuery;
 	FUE5MCPReadLogsQuery ReadLogsQuery;
@@ -405,6 +408,7 @@ struct FUE5MCPActionRequest
 	FString PropertyName;
 	FString PropertyComponentClass;
 	FString PropertyComponentName;
+	FString PackageName;
 	FUE5MCPPropertyValue PropertyValue;
 	FUE5MCPFindActorsQuery FindQuery;
 	FUE5MCPReadLogsQuery ReadLogsQuery;

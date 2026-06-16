@@ -17,7 +17,7 @@
 //   low_risk    tools (select_actors, set_actor_folder, set_actor_label,
 //               add_actor_tags, remove_actor_tags, set_actor_property,
 //               set_actor_transform, duplicate_actor_with_offset,
-//               spawn_actor_from_class)
+//               spawn_actor_from_class, check_out_package)
 //               → the MCP client's native tool-permission prompt is the human
 //                 approval; users may session-allowlist consciously.
 // Mutations are additionally gated by the plugin's package-write policy: a mutation
@@ -345,6 +345,20 @@ const TOOLS = [
     annotations: { title: 'Spawn allowlisted actors' },
   },
   {
+    name: 'check_out_package',
+    risk: 'low_risk',
+    description: 'Check a package out of source control so a mutation blocked by `package_not_writable` can proceed. This is the ONLY tool that issues a real source-control write (a network operation), and it is NOT editor-undoable — revert via source control. Off unless the project enables it; even then the plugin refuses if source control is unavailable, the package is not controlled, or it is checked out by another user. Pass the long package name reported by get_package_status / list_capabilities / the package_not_writable refusal.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        package_name: { type: 'string', minLength: 1, description: 'Long package name to check out, e.g. "/Game/Maps/Demo".' },
+      },
+      required: ['package_name'],
+      additionalProperties: false,
+    },
+    annotations: { title: 'Check out package (source-control write)' },
+  },
+  {
     name: 'delete_actor',
     risk: 'destructive',
     description: 'PERMANENTLY delete these actors from the level (DESTRUCTIVE; reversible only via editor Undo). Keep this tool on the permission "ask" list so it always prompts.',
@@ -445,6 +459,7 @@ const PLUGIN_TOOL_RISK = {
   set_actor_transform: 'low_risk',
   duplicate_actor_with_offset: 'low_risk',
   spawn_actor_from_class: 'low_risk',
+  check_out_package: 'low_risk',
   delete_actor: 'destructive',
 };
 
@@ -720,6 +735,11 @@ const HANDLERS = {
     return runMutatingPlan(`PERMANENTLY delete ${args.actor_paths.length} actor(s).`,
       [makeAction('delete_actor', 'destructive', args.actor_paths)],
       { secondConfirmation: true });
+  },
+
+  async check_out_package(args) {
+    return runMutatingPlan(`Check out package '${args.package_name}' from source control.`,
+      [makeAction('check_out_package', 'low_risk', [], { package_name: args.package_name })]);
   },
 };
 

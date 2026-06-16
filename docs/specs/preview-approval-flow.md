@@ -140,6 +140,9 @@ These are the exact `RefusalCode` strings emitted by `FUE5MCPEditorService` /
 | `play_mode_active` | Play-In-Editor active; mutations are blocked | `execute_external`, panel approve |
 | `editor_unavailable` | No editor or no open world | `execute_external`, panel approve |
 | `package_not_writable` | A mutation would dirty a package the editor cannot save — read-only / not-checked-out on disk, or checked out by another user. Check it out / make it writable first, or disable the package-write policy. Gated per-action; new/unsaved + writable packages are unaffected | `execute_external`, panel approve |
+| `source_control_checkout_disabled` | `check_out_package` used but `bAllowSourceControlCheckout` is off — the source-control write opt-in | `execute_external`, panel approve |
+| `source_control_unavailable` | `check_out_package` but source control is not enabled/available in this editor | `execute_external`, panel approve |
+| `package_not_found` / `package_not_source_controlled` / `checkout_failed` | `check_out_package` against a missing package, a package not under source control, or a checkout the provider rejected | `execute_external`, panel approve |
 | `stale_context` | World or selection changed after the plan was generated | `execute_external`, panel approve |
 | `plan_pending` | Another plan is already pending approval; wait or poll it | submit / external |
 | `plan_consumed` | The plan already executed; regenerate the preview to run again | panel approve |

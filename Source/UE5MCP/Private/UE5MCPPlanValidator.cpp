@@ -177,6 +177,10 @@ FUE5MCPPlanValidationResult FUE5MCPPlanValidator::ValidateAndResolve(const FUE5M
 				}
 			}
 		}
+		if (Tool->ActionType == EUE5MCPActionType::CheckOutPackage && ActionRequest.PackageName.IsEmpty())
+		{
+			Problems.Add(FString::Printf(TEXT("R9: %s missing required non-empty param 'package_name'"), *Where));
+		}
 		// A transform action that changes nothing is a no-op mutation; refuse it so a
 		// blank set_actor_transform can never occupy the approval slot.
 		if (Tool->ActionType == EUE5MCPActionType::SetActorTransform && ActionRequest.Transform.IsEmpty())
@@ -250,6 +254,7 @@ FUE5MCPPlanValidationResult FUE5MCPPlanValidator::ValidateAndResolve(const FUE5M
 		Resolved.Action.PropertyName = ActionRequest.PropertyName;
 		Resolved.Action.PropertyComponentClass = ActionRequest.PropertyComponentClass;
 		Resolved.Action.PropertyComponentName = ActionRequest.PropertyComponentName;
+		Resolved.Action.PackageName = ActionRequest.PackageName;
 		Resolved.Action.PropertyValue = ActionRequest.PropertyValue;
 		Resolved.Action.FindQuery = ActionRequest.FindQuery;
 		Resolved.Action.ReadLogsQuery = ActionRequest.ReadLogsQuery;

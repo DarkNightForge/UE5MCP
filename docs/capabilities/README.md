@@ -1,7 +1,7 @@
 # UE5MCP capability map
 
 Status: living product/planning document  
-Last updated: 2026-06-16 (added `list_capabilities` — live tool registry + configured allowlists/policy, so agents never hallucinate tools or guess the writable surface; suite verified 76/76 in-editor)  
+Last updated: 2026-06-16 (added `check_out_package` — the first governed source-control write: opt-in, previewed/approved checkout so a `package_not_writable`-blocked mutation can proceed; suite verified 78/78 in-editor)  
 Source of truth for current tools: `Source/UE5MCP/Private/UE5MCPToolRegistry.cpp`, `docs/specs/action-plan-format.md`, `docs/specs/preview-approval-flow.md`, and `docs/validation-checklist.md`.
 
 This document tracks **breadth**: which parts of Unreal Engine development UE5MCP can currently observe, preview, mutate, refuse, and verify.
@@ -61,12 +61,13 @@ Registry tools in v1:
 | `set_actor_transform` | low mutation | Spatial layout | Sets absolute location/rotation/scale components; omitted components unchanged; no-op refused. |
 | `duplicate_actor_with_offset` | low mutation | Spatial layout | Duplicates target actors once with a typed offset. |
 | `spawn_actor_from_class` | low mutation | Bounded creation | Spawns allowlisted classes/meshes, max 25 instances/action. |
+| `check_out_package` | low mutation | Source control | Checks a package out of source control so a `package_not_writable`-blocked mutation can proceed — the only tool that issues a real SC write (network op) and the only mutation NOT editor-undoable. Opt-in (`bAllowSourceControlCheckout`, default off); refuses if SC unavailable / package missing / not controlled / checked out by another. |
 | `delete_actor` | destructive | Scene cleanup | Deletes target actors through destructive gate; undoable by editor transaction. |
 
 Current verification snapshot:
 
-- Public repo Python checks: `120 passed` in the last local verification run.
-- UE automation suite is now **76/76 passing**, verified in a headless in-editor run on UE 5.7.4 (Linux source build) — including the `read_logs`, label/tag, `get_package_status`, `get_actor_properties`/`get_actor_components` discovery, `list_capabilities`, component-by-name addressing, the package-write policy, and `set_actor_property` (scalar + enum/struct-member/asset value-kind) tests.
+- Public repo Python checks: `125 passed` in the last local verification run.
+- UE automation suite is now **78/78 passing**, verified in a headless in-editor run on UE 5.7.4 (Linux source build) — including the `read_logs`, label/tag, `get_package_status`, `get_actor_properties`/`get_actor_components` discovery, `list_capabilities`, `check_out_package` governance refusals, component-by-name addressing, the package-write policy, and `set_actor_property` (scalar + enum/struct-member/asset value-kind) tests.
 - Windows and Epic Games Launcher binary builds are not yet verified.
 - Full tool breadth is still actor/world-editor focused; most asset/Blueprint/team-pipeline workflows are not shipped.
 
@@ -196,11 +197,12 @@ Current verification snapshot:
 
 | Field | Current state |
 | --- | --- |
-| Status | `partial` — read-only status + **package-write policy on mutations** shipped; no SC mutation (checkout/add/revert) yet |
+| Status | `partial` — read-only status + **package-write policy** + **governed checkout** (`check_out_package`) shipped; add/revert/submit still deferred |
 | Current support | `get_package_status` reports the dirty package set plus a source-control summary (provider, enabled/available) and per-package cached SC state token (`checked_out`, `not_current`, `not_controlled`, `source_control_disabled`, …). Cache-only: it never starts a Perforce/Git network call from a model request. **Package-write policy:** every mutation preview surfaces the writability of the packages it would dirty, and the executor refuses (`package_not_writable`) any mutation that would dirty a package the editor cannot save — read-only / not-checked-out on disk (the universal "save will fail" signal, e.g. an unchecked-out Perforce file) or checked out by another user. New/unsaved + writable packages are unaffected, so no-source-control / solo workflows are never blocked. Toggleable (`bBlockMutationsToUnwritablePackages`, default on). UE5MCP still does not manage checkouts/changelists. |
-| Missing | Checkout/add/revert, changelist routing, explicit SC refresh (opt-in network call), conflict handling. |
-| Next useful slice | Governed checkout (`check_out_package`): an opt-in, allowlisted action that checks a package out so a blocked mutation can proceed — the first SC *write*, still previewed/approved. |
-| Proof needed | Any mutation that dirties packages reports the exact package list and refuses when package state is not writable/checked out — covered by `UE5MCP.Executor.PackageWritabilityPolicyMatrix` + `UE5MCP.Executor.UnsavedPackageMutationAllowedUnderPolicy`. |
+| Current support (write) | `check_out_package`: an opt-in (`bAllowSourceControlCheckout`, default off), previewed/approved action that issues a real source-control checkout (the only SC network *write*; not editor-undoable) so a `package_not_writable`-blocked mutation can proceed. Refuses when disabled / SC unavailable / package missing / not controlled / checked out by another. |
+| Missing | Add / revert / submit / changelist routing, explicit SC refresh (opt-in network call), conflict handling. |
+| Next useful slice | `revert_package` (the safe inverse of checkout) and explicit `refresh_source_control` (opt-in network status refresh), then add/submit with changelist routing. |
+| Proof needed | Checkout governance refusals (disabled / unavailable) covered by `UE5MCP.Executor.CheckOutPackageGovernanceRefusals`; the package-write policy by `UE5MCP.Executor.PackageWritabilityPolicyMatrix` + `UnsavedPackageMutationAllowedUnderPolicy`. The live happy-path checkout needs a real SC provider (not headless-testable). |
 
 ### 14. World Partition, levels, sublevels, streaming
 
@@ -377,12 +379,13 @@ Current verification snapshot:
 Ranked by leverage and fit with the governed model:
 
 1. **Read-only Blueprint/material/asset inspection** (`L0`) — expands project understanding before risky mutation.
-2. **Governed checkout** (`L6`) — `check_out_package`: opt-in, allowlisted, previewed/approved SC checkout so a `package_not_writable`-blocked mutation can proceed. The first SC *write*; the natural follow-on to the package-write policy.
+2. **`revert_package` + `refresh_source_control`** (`L6`) — the safe inverse of checkout and an opt-in status refresh; rounds out the source-control loop after `check_out_package`.
 3. **Widen the default `PropertyAllowlist`** — pure config (no engine work); the cine-camera + `FPostProcessSettings` members are already addressable and `get_actor_properties` surfaces them.
 4. **Domain skills packs** — curated, parameterized recipe bundles per workflow (lighting pass, scene cleanup) layered on the existing typed tools.
 
 Shipped since last revision:
 
+- **Governed checkout** (`L6`) — `check_out_package`: opt-in, previewed/approved source-control checkout (the first SC *write*) so a `package_not_writable`-blocked mutation can proceed. See domain 13.
 - **`list_capabilities`** (`L0`) — live tool registry + configured allowlists/policy snapshot; agents call it first to know exactly what exists and what is writable, instead of guessing. See domain 30.
 - **Package-write policy on mutations** (`L6`) — previews surface the writability of every package a mutation would dirty, and the executor refuses `package_not_writable` for read-only / checked-out-by-other packages. The studio-adoption guardrail. See domain 13.
 - **Component-by-name addressing** (`L3`) — optional `component_name` on `set_actor_property`/`get_actor_properties` targets one component among several of the same class (instance selector, never widens policy) — resolves the `ambiguous_component` case. See domain 8.

@@ -120,4 +120,15 @@ public:
 	UPROPERTY(config, EditAnywhere, Category = "Package Policy",
 		meta = (DisplayName = "Block mutations to unwritable / not-checked-out packages"))
 	bool bBlockMutationsToUnwritablePackages = true;
+
+	/** Gates the `check_out_package` tool — the only action that issues a real source
+	 *  control operation (a checkout is a network write and is NOT editor-undoable;
+	 *  revert via source control). Off by default: a project opts in consciously before
+	 *  any AI-driven plan may check files out. Even when enabled, every checkout is
+	 *  previewed and approved like any other mutation, and the plugin still refuses if
+	 *  source control is unavailable or the package is not controlled / checked out by
+	 *  another user. */
+	UPROPERTY(config, EditAnywhere, Category = "Package Policy",
+		meta = (DisplayName = "Allow check_out_package (issues a real source-control checkout)"))
+	bool bAllowSourceControlCheckout = false;
 };
