@@ -63,6 +63,9 @@ class ExampleFileTests(unittest.TestCase):
     def test_get_actor_components_is_valid(self):
         self.assertEqual(validate_plan(load_example("get-actor-components.json")), [])
 
+    def test_list_capabilities_is_valid(self):
+        self.assertEqual(validate_plan(load_example("list-capabilities.json")), [])
+
     def test_invalid_examples_fail_for_documented_rules(self):
         problems = validate_plan(load_example("invalid-empty-targets.json"))
         self.assertIn("R6", rules(problems))
@@ -542,6 +545,25 @@ class GetActorPropertiesTests(unittest.TestCase):
         plan = self.plan()
         plan["actions"][0]["params"]["component_name"] = "LightB"
         self.assertEqual(validate_plan(plan), [])
+
+
+class ListCapabilitiesTests(unittest.TestCase):
+    def plan(self):
+        return load_example("list-capabilities.json")
+
+    def test_valid(self):
+        self.assertEqual(validate_plan(self.plan()), [])
+
+    def test_r6_rejects_targets(self):
+        # list_capabilities is read-only and takes no targets.
+        plan = self.plan()
+        plan["actions"][0]["targets"] = ["/Temp/Untitled_1.Untitled_1:PersistentLevel.StaticMeshActor_0"]
+        self.assertIn("R6", rules(validate_plan(plan)))
+
+    def test_r9_unknown_param(self):
+        plan = self.plan()
+        plan["actions"][0]["params"]["verbose"] = True
+        self.assertIn("R9", rules(validate_plan(plan)))
 
 
 class SetActorPropertyParamsTests(unittest.TestCase):

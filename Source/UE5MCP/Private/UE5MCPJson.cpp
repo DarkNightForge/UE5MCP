@@ -607,6 +607,66 @@ FString UE5MCPJson::SerializeExecutionResult(const FUE5MCPExecutionResult& Resul
 			ResultObject->SetArrayField(TEXT("components"), ComponentValues);
 			ResultObject->SetBoolField(TEXT("components_truncated"), ActionResult.bComponentsTruncated);
 		}
+		if (ActionResult.bHasCapabilities)
+		{
+			const FUE5MCPCapabilities& Caps = ActionResult.Capabilities;
+			TSharedRef<FJsonObject> CapsObject = MakeShared<FJsonObject>();
+			CapsObject->SetNumberField(TEXT("plan_schema_version"), Caps.PlanSchemaVersion);
+
+			TArray<TSharedPtr<FJsonValue>> ToolValues;
+			for (const FUE5MCPToolCapability& Tool : Caps.Tools)
+			{
+				TSharedRef<FJsonObject> ToolObject = MakeShared<FJsonObject>();
+				ToolObject->SetStringField(TEXT("name"), Tool.Name);
+				ToolObject->SetStringField(TEXT("risk"), Tool.Risk);
+				ToolObject->SetBoolField(TEXT("requires_targets"), Tool.bRequiresTargets);
+				ToolObject->SetBoolField(TEXT("accepts_targets"), Tool.bAcceptsTargets);
+				TArray<TSharedPtr<FJsonValue>> ParamValues;
+				for (const FString& Param : Tool.Params)
+				{
+					ParamValues.Add(MakeShared<FJsonValueString>(Param));
+				}
+				ToolObject->SetArrayField(TEXT("params"), ParamValues);
+				ToolValues.Add(MakeShared<FJsonValueObject>(ToolObject));
+			}
+			CapsObject->SetArrayField(TEXT("tools"), ToolValues);
+
+			auto StringArray = [](const TArray<FString>& In)
+			{
+				TArray<TSharedPtr<FJsonValue>> Out;
+				for (const FString& S : In) { Out.Add(MakeShared<FJsonValueString>(S)); }
+				return Out;
+			};
+			CapsObject->SetArrayField(TEXT("spawn_class_allowlist"), StringArray(Caps.SpawnClassAllowlist));
+			CapsObject->SetArrayField(TEXT("spawn_mesh_allowlist"), StringArray(Caps.SpawnMeshAllowlist));
+
+			TArray<TSharedPtr<FJsonValue>> PropValues;
+			for (const FUE5MCPPropertyPolicySummary& Entry : Caps.PropertyAllowlist)
+			{
+				TSharedRef<FJsonObject> EntryObject = MakeShared<FJsonObject>();
+				EntryObject->SetStringField(TEXT("class_path"), Entry.ClassPath);
+				EntryObject->SetStringField(TEXT("property"), Entry.PropertyName);
+				EntryObject->SetStringField(TEXT("type"), Entry.Type);
+				if (Entry.bHasRange)
+				{
+					EntryObject->SetNumberField(TEXT("range_min"), Entry.Min);
+					EntryObject->SetNumberField(TEXT("range_max"), Entry.Max);
+				}
+				if (!Entry.AssetClass.IsEmpty()) { EntryObject->SetStringField(TEXT("asset_class"), Entry.AssetClass); }
+				if (!Entry.OverrideFlag.IsEmpty()) { EntryObject->SetStringField(TEXT("override_flag"), Entry.OverrideFlag); }
+				PropValues.Add(MakeShared<FJsonValueObject>(EntryObject));
+			}
+			CapsObject->SetArrayField(TEXT("property_allowlist"), PropValues);
+
+			TSharedRef<FJsonObject> PolicyObject = MakeShared<FJsonObject>();
+			PolicyObject->SetBoolField(TEXT("block_mutations_to_unwritable_packages"), Caps.bBlockMutationsToUnwritablePackages);
+			PolicyObject->SetBoolField(TEXT("allow_external_session_approval"), Caps.bAllowExternalSessionApproval);
+			PolicyObject->SetBoolField(TEXT("require_in_editor_confirm_for_destructive"), Caps.bRequireInEditorConfirmForDestructive);
+			PolicyObject->SetNumberField(TEXT("max_context_actors"), Caps.MaxContextActors);
+			CapsObject->SetObjectField(TEXT("policy"), PolicyObject);
+
+			ResultObject->SetObjectField(TEXT("capabilities"), CapsObject);
+		}
 		ActionResults.Add(MakeShared<FJsonValueObject>(ResultObject));
 	}
 	Root->SetArrayField(TEXT("action_results"), ActionResults);

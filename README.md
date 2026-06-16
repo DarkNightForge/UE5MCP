@@ -29,7 +29,7 @@ We do **not** try to out-breadth the exec-everything approach. We win where brea
 
 ## Status — honest accounting
 
-- **Verified:** builds clean as a drop-in **project plugin** and passes **74/74** headless automation tests on **Unreal Engine 5.7.4** (Linux source build). Live runs with an external Claude Code client building and fully undoing an organized scene through the approval boundary.
+- **Verified:** builds clean as a drop-in **project plugin** and passes **76/76** headless automation tests on **Unreal Engine 5.7.4** (Linux source build). Live runs with an external Claude Code client building and fully undoing an organized scene through the approval boundary.
 - **Not yet verified:** Epic Games Launcher **binary** builds and **Windows**. Treat those as untested until confirmed.
 - **Beta, v0.1.** 8 typed actions today (see below). Breadth is the roadmap, not the claim.
 
@@ -67,9 +67,9 @@ Full walkthrough: [`docs/demo-live.md`](docs/demo-live.md). Architecture & safet
 
 ## The tools
 
-Seventeen MCP tools (`mcp__ue5mcp__*`), in three risk tiers:
+Eighteen MCP tools (`mcp__ue5mcp__*`), in three risk tiers:
 
-**Read-only** — `get_selection`, `find_actors`, `read_logs`, `get_package_status`, `get_actor_properties`, `get_actor_components`, `preview_actions`
+**Read-only** — `get_selection`, `find_actors`, `read_logs`, `get_package_status`, `get_actor_properties`, `get_actor_components`, `list_capabilities`, `preview_actions`
 **Low mutation** — `select_actors`, `set_actor_folder`, `set_actor_label`, `add_actor_tags`, `remove_actor_tags`, `set_actor_property` (allowlisted), `set_actor_transform`, `duplicate_actor_with_offset`, `spawn_actor_from_class` (class + mesh allowlisted)
 **Destructive** — `delete_actor`
 
@@ -111,7 +111,7 @@ The MCP server holds **no editor capability** — stdio + loopback HTTP only. Tr
 
 ## Roadmap
 
-The open frontier is **breadth without an open `exec`**. The plan: keep the typed-plan JSON as the only thing the model ever speaks, and grow a **capability registry** via (a) reflection-driven codegen for the native-reflectable surface and (b) vetted **parameterized recipes** (typed params bound as data, never string-concatenated) for the Python-only surface — all funneling through the same validate → preview → transaction → log → refusal pipeline. Plus discovery (`list_capabilities`), domain **skills packs**, and a `read_logs` readback loop. Contributions welcome — this is where the project grows.
+The open frontier is **breadth without an open `exec`**. The plan: keep the typed-plan JSON as the only thing the model ever speaks, and grow a **capability registry** via (a) reflection-driven codegen for the native-reflectable surface and (b) vetted **parameterized recipes** (typed params bound as data, never string-concatenated) for the Python-only surface — all funneling through the same validate → preview → transaction → log → refusal pipeline. Discovery (`list_capabilities`, returning the live tool registry + configured allowlists) is shipped; still ahead are domain **skills packs** and richer reflection-driven breadth. Contributions welcome — this is where the project grows.
 
 The living capability map is [`docs/capabilities/`](docs/capabilities/). Update it whenever a tool, risk tier, validation rule, Unreal domain, demo, or verification scope changes.
 

@@ -122,6 +122,12 @@ REGISTRY = {
         "requires_targets": True,
         "accepts_targets": True,
     },
+    "list_capabilities": {
+        "risk": READ_ONLY,
+        "params": {},
+        "requires_targets": False,
+        "accepts_targets": False,
+    },
     "select_actors": {
         "risk": LOW_RISK,
         "params": {},

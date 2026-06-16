@@ -15,6 +15,7 @@ enum class EUE5MCPActionType : uint8
 	GetPackageStatus,
 	GetActorProperties,
 	GetActorComponents,
+	ListCapabilities,
 	SelectActors,
 	SetActorFolder,
 	SetActorLabel,
@@ -169,6 +170,47 @@ struct FUE5MCPComponentSummary
 	bool bEditableInstance = false;
 };
 
+/** One tool row returned by list_capabilities — mirrors the live tool registry so an
+ *  agent knows exactly which tools, risk tiers, and params exist (no hallucinated tools). */
+struct FUE5MCPToolCapability
+{
+	FString Name;
+	FString Risk;
+	TArray<FString> Params;
+	bool bRequiresTargets = false;
+	bool bAcceptsTargets = false;
+};
+
+/** One allowlist entry as reported by list_capabilities (read-only view of a
+ *  FUE5MCPPropertyAllowEntry) — tells an agent the exact set_actor_property-writable surface. */
+struct FUE5MCPPropertyPolicySummary
+{
+	FString ClassPath;
+	FString PropertyName;
+	FString Type;
+	bool bHasRange = false;
+	double Min = 0.0;
+	double Max = 0.0;
+	FString AssetClass;
+	FString OverrideFlag;
+};
+
+/** The live capability + policy snapshot returned by list_capabilities: the tool
+ *  registry plus the project's configured allowlists and policy switches. Pure
+ *  read of FUE5MCPToolRegistry + UUE5MCPSettings — authoritative for THIS editor. */
+struct FUE5MCPCapabilities
+{
+	int32 PlanSchemaVersion = 0;
+	TArray<FUE5MCPToolCapability> Tools;
+	TArray<FString> SpawnClassAllowlist;
+	TArray<FString> SpawnMeshAllowlist;
+	TArray<FUE5MCPPropertyPolicySummary> PropertyAllowlist;
+	bool bBlockMutationsToUnwritablePackages = false;
+	bool bAllowExternalSessionApproval = false;
+	bool bRequireInEditorConfirmForDestructive = false;
+	int32 MaxContextActors = 0;
+};
+
 /** A typed value for set_actor_property, tagged by the JSON kind the client sent.
  *  The validator checks this kind against the allowlist entry's declared type; the
  *  executor writes it through reflection only after that match holds. */
@@ -290,6 +332,9 @@ struct FUE5MCPActionResult
 	bool bHasComponents = false;
 	TArray<FUE5MCPComponentSummary> Components;
 	bool bComponentsTruncated = false;
+	/** Populated by list_capabilities only. */
+	bool bHasCapabilities = false;
+	FUE5MCPCapabilities Capabilities;
 };
 
 struct FUE5MCPExecutionResult

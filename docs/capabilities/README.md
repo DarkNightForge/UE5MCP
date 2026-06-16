@@ -1,7 +1,7 @@
 # UE5MCP capability map
 
 Status: living product/planning document  
-Last updated: 2026-06-16 (added the package-write policy on mutations — previews surface package writability and the executor refuses `package_not_writable` for read-only / checked-out-by-other packages; suite verified 74/74 in-editor)  
+Last updated: 2026-06-16 (added `list_capabilities` — live tool registry + configured allowlists/policy, so agents never hallucinate tools or guess the writable surface; suite verified 76/76 in-editor)  
 Source of truth for current tools: `Source/UE5MCP/Private/UE5MCPToolRegistry.cpp`, `docs/specs/action-plan-format.md`, `docs/specs/preview-approval-flow.md`, and `docs/validation-checklist.md`.
 
 This document tracks **breadth**: which parts of Unreal Engine development UE5MCP can currently observe, preview, mutate, refuse, and verify.
@@ -50,6 +50,7 @@ Registry tools in v1:
 | `get_package_status` | read-only | Source control / packages | Reports the dirty package set (blast radius of a save) + source-control summary (provider, enabled/available) + per-package cached SC state; capped (default 100, max 500); cache-only, no SC network call. |
 | `get_actor_properties` | read-only | Components / allowlisted properties | Lists the reflected properties of the first target actor (or a uniquely-resolved `component` class on it) with current values; per row: `cpp_type`, `current_value`, `editable`, `differs_from_default`, `allowlisted`, allowlisted type/range, advisory `ClampMin/ClampMax`. Defaults to exactly the `set_actor_property`-writable surface — discovery without trial-and-error. Capped (default 50, max 500); read-only but requires targets; refuses `ambiguous_component`/`property_owner_not_found`. |
 | `get_actor_components` | read-only | Components / allowlisted properties | Lists the first target actor's components; per row: `name`, `class_path`, `creation_method` (native/blueprint_template/construction_script/instance), `attach_parent`, `component_tags`, `editable_instance`. Discovery so an agent can name a component to address. Capped (default 50, max 500); read-only but requires targets; refuses `no_valid_targets`. |
+| `list_capabilities` | read-only | Docs / capability governance | Returns the live tool registry (name/risk/params/target rules) + this project's configured policy (spawn + property allowlists, package-write + external-approval switches, plan schema version). No targets; authoritative for the running editor — stops agents hallucinating tools or guessing the writable surface. |
 | MCP `preview_actions` | read-only | UX / preview | Validates and resolves typed action plans without executing. |
 | `select_actors` | low mutation | Selection | Sets editor selection to explicit actor targets. |
 | `set_actor_folder` | low mutation | World Outliner organization | Moves target actors into a named folder. |
@@ -64,8 +65,8 @@ Registry tools in v1:
 
 Current verification snapshot:
 
-- Public repo Python checks: `116 passed` in the last local verification run.
-- UE automation suite is now **74/74 passing**, verified in a headless in-editor run on UE 5.7.4 (Linux source build) — including the `read_logs`, label/tag, `get_package_status`, `get_actor_properties`/`get_actor_components` discovery, component-by-name addressing, the package-write policy (`UE5MCP.Executor.PackageWritabilityPolicyMatrix` + `UnsavedPackageMutationAllowedUnderPolicy`), and `set_actor_property` (scalar + enum/struct-member/asset value-kind) tests.
+- Public repo Python checks: `120 passed` in the last local verification run.
+- UE automation suite is now **76/76 passing**, verified in a headless in-editor run on UE 5.7.4 (Linux source build) — including the `read_logs`, label/tag, `get_package_status`, `get_actor_properties`/`get_actor_components` discovery, `list_capabilities`, component-by-name addressing, the package-write policy, and `set_actor_property` (scalar + enum/struct-member/asset value-kind) tests.
 - Windows and Epic Games Launcher binary builds are not yet verified.
 - Full tool breadth is still actor/world-editor focused; most asset/Blueprint/team-pipeline workflows are not shipped.
 
@@ -88,7 +89,7 @@ Current verification snapshot:
 | Status | `partial` / `read-only` |
 | Current support | Current world, selected actors, capped loaded actor summaries, actor path/label/class/tags/folder/transform. |
 | Missing | Asset registry context, Blueprint graph summaries, component hierarchy beyond actor-level summaries, map/sublevel/world-partition context, project settings, plugin/module inventory. |
-| Next useful slice | Add `list_capabilities` and richer read-only diagnostics before new mutations. |
+| Next useful slice | Richer read-only project diagnostics (asset-registry context, map/sublevel summaries); `list_capabilities` is now shipped for the tool/policy side. |
 | Proof needed | Agent can answer “what is in this level/project?” without hallucinating or scanning unbounded surfaces. |
 
 ### 3. Actor discovery and selection
@@ -365,23 +366,24 @@ Current verification snapshot:
 
 | Field | Current state |
 | --- | --- |
-| Status | `partial` |
-| Current support | README, architecture, roadmap, action-plan spec, approval-flow spec, validation checklist, this capability map. |
+| Status | `partial` — docs + a machine-readable `list_capabilities` snapshot shipped |
+| Current support | README, architecture, roadmap, action-plan spec, approval-flow spec, validation checklist, this capability map. Plus `list_capabilities`: a runtime, machine-readable snapshot of the live tool registry + configured allowlists/policy (so an agent reads capabilities from the plugin itself, not from docs that can drift). |
 | Missing | Automated drift checks tying registry/tools to this map, per-domain pages as breadth grows, release notes. |
-| Next useful slice | Add capability-map update to PR/agent instructions and validation checklist. |
-| Proof needed | Every new tool/domain change updates this map in the same commit or explicitly records why not. |
+| Next useful slice | A test/CI check that diffs the `list_capabilities` tool set against this map so docs cannot silently drift from the registry. |
+| Proof needed | Every new tool/domain change updates this map in the same commit; `list_capabilities` is exercised by `UE5MCP.Tools.ListCapabilitiesReportsToolsAndPolicy` + `UE5MCP.Json.SerializesCapabilities`. |
 
 ## Recommended next capability slices
 
 Ranked by leverage and fit with the governed model:
 
-1. **Capability registry / `list_capabilities`** (`L0`) — lets agents know exactly what is possible now (tools, params, allowlists) and prevents hallucinated tools. Cheap, high-leverage for agent reliability.
-2. **Read-only Blueprint/material/asset inspection** (`L0`) — expands project understanding before risky mutation.
-3. **Governed checkout** (`L6`) — `check_out_package`: opt-in, allowlisted, previewed/approved SC checkout so a `package_not_writable`-blocked mutation can proceed. The first SC *write*; the natural follow-on to the package-write policy.
-4. **Widen the default `PropertyAllowlist`** — pure config (no engine work); the cine-camera + `FPostProcessSettings` members are already addressable and `get_actor_properties` surfaces them.
+1. **Read-only Blueprint/material/asset inspection** (`L0`) — expands project understanding before risky mutation.
+2. **Governed checkout** (`L6`) — `check_out_package`: opt-in, allowlisted, previewed/approved SC checkout so a `package_not_writable`-blocked mutation can proceed. The first SC *write*; the natural follow-on to the package-write policy.
+3. **Widen the default `PropertyAllowlist`** — pure config (no engine work); the cine-camera + `FPostProcessSettings` members are already addressable and `get_actor_properties` surfaces them.
+4. **Domain skills packs** — curated, parameterized recipe bundles per workflow (lighting pass, scene cleanup) layered on the existing typed tools.
 
 Shipped since last revision:
 
+- **`list_capabilities`** (`L0`) — live tool registry + configured allowlists/policy snapshot; agents call it first to know exactly what exists and what is writable, instead of guessing. See domain 30.
 - **Package-write policy on mutations** (`L6`) — previews surface the writability of every package a mutation would dirty, and the executor refuses `package_not_writable` for read-only / checked-out-by-other packages. The studio-adoption guardrail. See domain 13.
 - **Component-by-name addressing** (`L3`) — optional `component_name` on `set_actor_property`/`get_actor_properties` targets one component among several of the same class (instance selector, never widens policy) — resolves the `ambiguous_component` case. See domain 8.
 - **Read-only component discovery** (`L0`) — `get_actor_components`: lists a target's components (name/class/creation-method/attach-parent/tags/editable) so an agent can name the component to address. See domain 8.

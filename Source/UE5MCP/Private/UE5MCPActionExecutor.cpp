@@ -27,6 +27,7 @@
 #include "UObject/UObjectIterator.h"
 #include "UE5MCPContextCollector.h"
 #include "UE5MCPEditorService.h"
+#include "UE5MCPPlanValidator.h"
 #include "UE5MCPSettings.h"
 #include "UE5MCPTargetResolver.h"
 #include "UE5MCPToolRegistry.h"
@@ -107,6 +108,9 @@ FUE5MCPExecutionResult FUE5MCPActionExecutor::ExecuteApprovedPlan(const FUE5MCPV
 			break;
 		case EUE5MCPActionType::GetActorComponents:
 			ActionResult = ExecuteGetActorComponents(ResolvedAction);
+			break;
+		case EUE5MCPActionType::ListCapabilities:
+			ActionResult = ExecuteListCapabilities(ResolvedAction);
 			break;
 		case EUE5MCPActionType::SelectActors:
 			ActionResult = ExecuteSelectActors(ResolvedAction);
@@ -1634,6 +1638,58 @@ FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteGetActorComponents(const FUE5M
 		*Actor->GetClass()->GetName(),
 		RequestedCount > 1 ? *FString::Printf(TEXT(" [inspected first of %d targets]"), RequestedCount) : TEXT(""),
 		Result.bComponentsTruncated ? TEXT(" (truncated at cap)") : TEXT(""));
+	return Result;
+}
+
+FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteListCapabilities(const FUE5MCPResolvedAction& ResolvedAction)
+{
+	FUE5MCPActionResult Result;
+	Result.ActionId = ResolvedAction.Action.Id;
+	Result.bHasCapabilities = true;
+
+	FUE5MCPCapabilities& Caps = Result.Capabilities;
+	Caps.PlanSchemaVersion = FUE5MCPPlanValidator::SchemaVersion;
+
+	// Tools: the authoritative live registry — name, risk tier, params, target rules.
+	for (const FUE5MCPToolDescriptor& Tool : FUE5MCPToolRegistry::GetTools())
+	{
+		FUE5MCPToolCapability Cap;
+		Cap.Name = Tool.ToolName;
+		Cap.Risk = FUE5MCPToolRegistry::RiskToString(Tool.Risk);
+		Cap.Params = Tool.AllowedParams;
+		Cap.bRequiresTargets = Tool.bRequiresTargets;
+		Cap.bAcceptsTargets = Tool.bAcceptsTargets;
+		Caps.Tools.Add(MoveTemp(Cap));
+	}
+
+	// Policy: this project's configured allowlists + switches (the real writable surface).
+	const UUE5MCPSettings* Settings = GetDefault<UUE5MCPSettings>();
+	Caps.SpawnClassAllowlist = Settings->SpawnClassAllowlist;
+	Caps.SpawnMeshAllowlist = Settings->SpawnMeshAllowlist;
+	for (const FUE5MCPPropertyAllowEntry& Entry : Settings->PropertyAllowlist)
+	{
+		FUE5MCPPropertyPolicySummary Summary;
+		Summary.ClassPath = Entry.ClassPath;
+		Summary.PropertyName = Entry.PropertyName.ToString();
+		Summary.Type = Entry.Type;
+		Summary.bHasRange = Entry.bHasRange;
+		Summary.Min = Entry.Min;
+		Summary.Max = Entry.Max;
+		Summary.AssetClass = Entry.AssetClass;
+		Summary.OverrideFlag = Entry.OverrideFlag;
+		Caps.PropertyAllowlist.Add(MoveTemp(Summary));
+	}
+	Caps.bBlockMutationsToUnwritablePackages = Settings->bBlockMutationsToUnwritablePackages;
+	Caps.bAllowExternalSessionApproval = Settings->bAllowExternalSessionApproval;
+	Caps.bRequireInEditorConfirmForDestructive = Settings->bRequireInEditorConfirmForDestructive;
+	Caps.MaxContextActors = Settings->MaxContextActors;
+
+	Result.bSuccess = true;
+	Result.Message = FString::Printf(
+		TEXT("list_capabilities: %d tool(s), %d spawn class(es) / %d mesh(es), %d allowlisted property tuple(s); package-write policy %s (read-only)"),
+		Caps.Tools.Num(), Caps.SpawnClassAllowlist.Num(), Caps.SpawnMeshAllowlist.Num(),
+		Caps.PropertyAllowlist.Num(),
+		Caps.bBlockMutationsToUnwritablePackages ? TEXT("on") : TEXT("off"));
 	return Result;
 }
 

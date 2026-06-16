@@ -412,4 +412,50 @@ bool FUE5MCPJsonSerializeTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPJsonSerializeCapabilitiesTest,
+	"UE5MCP.Json.SerializesCapabilities", UE5MCPTests::KernelTestFlags)
+bool FUE5MCPJsonSerializeCapabilitiesTest::RunTest(const FString& Parameters)
+{
+	FUE5MCPExecutionResult Execution;
+	Execution.bSuccess = true;
+	FUE5MCPActionResult ActionResult;
+	ActionResult.ActionId = TEXT("caps");
+	ActionResult.bSuccess = true;
+	ActionResult.Message = TEXT("caps");
+	ActionResult.bHasCapabilities = true;
+
+	FUE5MCPCapabilities& Caps = ActionResult.Capabilities;
+	Caps.PlanSchemaVersion = 1;
+	FUE5MCPToolCapability Tool;
+	Tool.Name = TEXT("set_actor_property");
+	Tool.Risk = TEXT("low_risk");
+	Tool.Params = { TEXT("property"), TEXT("value"), TEXT("component"), TEXT("component_name") };
+	Tool.bRequiresTargets = true;
+	Tool.bAcceptsTargets = true;
+	Caps.Tools.Add(Tool);
+	Caps.SpawnClassAllowlist.Add(TEXT("/Script/Engine.StaticMeshActor"));
+	FUE5MCPPropertyPolicySummary Prop;
+	Prop.ClassPath = TEXT("/Script/Engine.PointLightComponent");
+	Prop.PropertyName = TEXT("Intensity");
+	Prop.Type = TEXT("float");
+	Prop.bHasRange = true;
+	Prop.Min = 0.0;
+	Prop.Max = 1000000.0;
+	Caps.PropertyAllowlist.Add(Prop);
+	Caps.bBlockMutationsToUnwritablePackages = true;
+	ActionResult.Capabilities = Caps;
+	Execution.ActionResults.Add(ActionResult);
+
+	const FString Json = UE5MCPJson::SerializeExecutionResult(Execution);
+	TestTrue(TEXT("carries capabilities object"), Json.Contains(TEXT("\"capabilities\"")));
+	TestTrue(TEXT("carries plan_schema_version"), Json.Contains(TEXT("\"plan_schema_version\"")));
+	TestTrue(TEXT("carries tools with the tool name"), Json.Contains(TEXT("\"tools\"")) && Json.Contains(TEXT("set_actor_property")));
+	TestTrue(TEXT("carries the component_name param"), Json.Contains(TEXT("component_name")));
+	TestTrue(TEXT("carries spawn_class_allowlist"), Json.Contains(TEXT("spawn_class_allowlist")));
+	TestTrue(TEXT("carries property_allowlist"), Json.Contains(TEXT("property_allowlist")));
+	TestTrue(TEXT("carries the policy block"), Json.Contains(TEXT("block_mutations_to_unwritable_packages")));
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

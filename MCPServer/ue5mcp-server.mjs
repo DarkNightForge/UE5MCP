@@ -12,7 +12,7 @@
 // APPROVAL MODEL (mirrors the plugin's risk tiers via tool naming):
 //   read_only   tools (get_selection, find_actors, read_logs,
 //               get_package_status, get_actor_properties, get_actor_components,
-//               preview_actions)
+//               list_capabilities, preview_actions)
 //               → safe to allowlist; never mutate.
 //   low_risk    tools (select_actors, set_actor_folder, set_actor_label,
 //               add_actor_tags, remove_actor_tags, set_actor_property,
@@ -150,6 +150,13 @@ const TOOLS = [
       additionalProperties: false,
     },
     annotations: { title: 'Get actor components', readOnlyHint: true },
+  },
+  {
+    name: 'list_capabilities',
+    risk: 'read_only',
+    description: 'Return the plugin\'s LIVE capability + policy snapshot — read-only. Lists every tool (name, risk tier, params, whether it requires/accepts targets) and THIS project\'s configured policy: the spawn class/mesh allowlists, the set_actor_property PropertyAllowlist (class/property/type/range/asset-class/override — i.e. the exact writable surface), the package-write policy switch, external-approval flags, and the plan schema version. Call it first to know exactly what is possible right now instead of guessing tool names or property allowlist entries.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    annotations: { title: 'List capabilities', readOnlyHint: true },
   },
   {
     name: 'preview_actions',
@@ -428,6 +435,7 @@ const PLUGIN_TOOL_RISK = {
   get_package_status: 'read_only',
   get_actor_properties: 'read_only',
   get_actor_components: 'read_only',
+  list_capabilities: 'read_only',
   select_actors: 'low_risk',
   set_actor_folder: 'low_risk',
   set_actor_label: 'low_risk',
@@ -624,6 +632,11 @@ const HANDLERS = {
     }
     return runReadOnlyPlan('List the components of an actor.',
       makeAction('get_actor_components', 'read_only', args.actor_paths, params));
+  },
+
+  async list_capabilities() {
+    return runReadOnlyPlan('Report the live tool registry and configured policy.',
+      makeAction('list_capabilities', 'read_only'));
   },
 
   async preview_actions(args) {

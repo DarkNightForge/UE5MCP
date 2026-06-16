@@ -547,4 +547,56 @@ bool FUE5MCPGetActorPropertiesByNameTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPListCapabilitiesTest,
+	"UE5MCP.Tools.ListCapabilitiesReportsToolsAndPolicy", UE5MCPTests::KernelTestFlags)
+bool FUE5MCPListCapabilitiesTest::RunTest(const FString& Parameters)
+{
+	// Capabilities are static (registry + project settings) — no world required.
+	FUE5MCPResolvedAction Resolved;
+	Resolved.Action.Id = TEXT("test-list-capabilities");
+	Resolved.Action.Type = EUE5MCPActionType::ListCapabilities;
+	Resolved.Action.Risk = EUE5MCPRiskLevel::ReadOnly;
+
+	const FUE5MCPExecutionResult Result =
+		FUE5MCPActionExecutor::ExecuteApprovedPlan(UE5MCPTests::WrapPlanForTest(Resolved));
+	TestTrue(TEXT("list_capabilities executed"), Result.bSuccess);
+	if (!TestEqual(TEXT("One action result"), Result.ActionResults.Num(), 1))
+	{
+		return false;
+	}
+
+	const FUE5MCPActionResult& Action = Result.ActionResults[0];
+	TestTrue(TEXT("Result carries capabilities"), Action.bHasCapabilities);
+	const FUE5MCPCapabilities& Caps = Action.Capabilities;
+
+	TestEqual(TEXT("Plan schema version reported"), Caps.PlanSchemaVersion, 1);
+	TestTrue(TEXT("Tools listed"), Caps.Tools.Num() >= 15);
+
+	// The tool itself, a mutation, and a read-only tool are all present with correct risk.
+	const FUE5MCPToolCapability* Self = Caps.Tools.FindByPredicate(
+		[](const FUE5MCPToolCapability& T) { return T.Name == TEXT("list_capabilities"); });
+	const FUE5MCPToolCapability* SetProp = Caps.Tools.FindByPredicate(
+		[](const FUE5MCPToolCapability& T) { return T.Name == TEXT("set_actor_property"); });
+	if (TestNotNull(TEXT("list_capabilities is in the registry"), Self))
+	{
+		TestEqual(TEXT("list_capabilities is read_only"), Self->Risk, FString(TEXT("read_only")));
+		TestFalse(TEXT("list_capabilities takes no targets"), Self->bAcceptsTargets);
+	}
+	if (TestNotNull(TEXT("set_actor_property is in the registry"), SetProp))
+	{
+		TestEqual(TEXT("set_actor_property is low_risk"), SetProp->Risk, FString(TEXT("low_risk")));
+		TestTrue(TEXT("set_actor_property advertises component_name"), SetProp->Params.Contains(TEXT("component_name")));
+	}
+
+	// Live policy: the default allowlists + the package-write switch are surfaced.
+	TestTrue(TEXT("Default spawn class allowlist surfaced"),
+		Caps.SpawnClassAllowlist.Contains(TEXT("/Script/Engine.StaticMeshActor")));
+	TestTrue(TEXT("Default property allowlist surfaced (PointLightComponent.Intensity)"),
+		Caps.PropertyAllowlist.ContainsByPredicate([](const FUE5MCPPropertyPolicySummary& P)
+		{ return P.ClassPath == TEXT("/Script/Engine.PointLightComponent") && P.PropertyName == TEXT("Intensity") && P.bHasRange; }));
+	TestTrue(TEXT("Package-write policy defaults on"), Caps.bBlockMutationsToUnwritablePackages);
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

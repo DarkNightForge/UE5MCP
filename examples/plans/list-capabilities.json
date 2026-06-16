@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "summary": "Ask the plugin what tools and allowlists exist right now",
+  "requires_approval": false,
+  "requires_second_confirmation": false,
+  "actions": [
+    {
+      "id": "list-capabilities-01",
+      "tool": "list_capabilities",
+      "risk": "read_only",
+      "targets": [],
+      "params": {}
+    }
+  ]
+}

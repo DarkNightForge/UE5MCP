@@ -317,6 +317,9 @@ FString FUE5MCPPreviewModel::BuildPreviewText(const FUE5MCPResolvedAction& Resol
 			Action.TargetActors.Num() > 1 ? *FString::Printf(TEXT(" (of %d)"), Action.TargetActors.Num()) : TEXT(""));
 	}
 
+	case EUE5MCPActionType::ListCapabilities:
+		return TEXT("list_capabilities: report the live tool registry + configured allowlists/policy (read-only)");
+
 	case EUE5MCPActionType::FindActors:
 	{
 		const FUE5MCPFindActorsQuery& Query = Action.FindQuery;
