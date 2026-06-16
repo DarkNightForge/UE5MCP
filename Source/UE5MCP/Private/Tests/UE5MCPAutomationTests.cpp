@@ -472,6 +472,81 @@ bool FUE5MCPExecutorSetPropertyByComponentNameTest::RunTest(const FString& Param
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPPackageWritabilityMatrixTest,
+	"UE5MCP.Executor.PackageWritabilityPolicyMatrix", UE5MCPTests::KernelTestFlags)
+bool FUE5MCPPackageWritabilityMatrixTest::RunTest(const FString& Parameters)
+{
+	auto Writable = [this](bool bExists, bool bReadOnly, bool bScEnabled, const TCHAR* State, const TCHAR* ExpectReason)
+	{
+		FString Reason;
+		const bool bResult = FUE5MCPActionExecutor::EvaluatePackageWritability(bExists, bReadOnly, bScEnabled, State, Reason);
+		if (ExpectReason == nullptr)
+		{
+			TestTrue(FString::Printf(TEXT("writable (exists=%d ro=%d sc=%d %s)"), bExists, bReadOnly, bScEnabled, State), bResult);
+		}
+		else
+		{
+			TestFalse(FString::Printf(TEXT("blocked (exists=%d ro=%d sc=%d %s)"), bExists, bReadOnly, bScEnabled, State), bResult);
+			TestEqual(TEXT("block reason"), Reason, FString(ExpectReason));
+		}
+	};
+
+	// New/unsaved package — created on save, always writable.
+	Writable(/*exists*/false, /*ro*/true, /*sc*/true, TEXT("unknown"), nullptr);
+	// No source control: writable file allowed, read-only file blocked.
+	Writable(true, false, false, TEXT("source_control_disabled"), nullptr);
+	Writable(true, true, false, TEXT("source_control_disabled"), TEXT("read_only_on_disk"));
+	// Source control on: read-only (unchecked-out, e.g. Perforce) needs checkout.
+	Writable(true, true, true, TEXT("up_to_date"), TEXT("needs_checkout"));
+	// Checked out by someone else is always blocked, even if locally writable.
+	Writable(true, false, true, TEXT("checked_out_other"), TEXT("checked_out_by_other"));
+	// A file we hold for edit (or have added) is writable regardless of the on-disk flag.
+	Writable(true, true, true, TEXT("checked_out"), nullptr);
+	Writable(true, true, true, TEXT("added"), nullptr);
+	// Git-style: no source control locks, file writable -> always fine.
+	Writable(true, false, true, TEXT("up_to_date"), nullptr);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPUnsavedPackageMutationAllowedTest,
+	"UE5MCP.Executor.UnsavedPackageMutationAllowedUnderPolicy", UE5MCPTests::KernelTestFlags)
+bool FUE5MCPUnsavedPackageMutationAllowedTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+	if (!TestNotNull(TEXT("CreateNewMap returned a world"), World))
+	{
+		return false;
+	}
+	APointLight* Light = World->SpawnActor<APointLight>();
+	if (!TestNotNull(TEXT("Spawned a point light"), Light))
+	{
+		return false;
+	}
+
+	// The fresh map is transient (no on-disk file), so the package-write policy must
+	// treat it as writable — a mutation here succeeds with the policy at its default.
+	FUE5MCPResolvedAction Resolved;
+	Resolved.Action.Id = TEXT("test-pkg-allowed");
+	Resolved.Action.Type = EUE5MCPActionType::SetActorProperty;
+	Resolved.Action.Risk = EUE5MCPRiskLevel::LowMutation;
+	Resolved.Action.PropertyName = TEXT("Intensity");
+	Resolved.Action.PropertyComponentClass = TEXT("/Script/Engine.PointLightComponent");
+	Resolved.Action.PropertyValue.Kind = FUE5MCPPropertyValue::EKind::Number;
+	Resolved.Action.PropertyValue.Number = 4242.0;
+	Resolved.Action.TargetActors.Add(Light);
+
+	bool bBlocked = true;
+	const FString Note = FUE5MCPActionExecutor::DescribeActionPackages(Resolved, bBlocked);
+	TestFalse(TEXT("Transient (unsaved) package is not blocked"), bBlocked);
+
+	const FUE5MCPExecutionResult Result =
+		FUE5MCPActionExecutor::ExecuteApprovedPlan(UE5MCPTests::WrapPlanForTest(Resolved));
+	TestTrue(TEXT("Mutation on an unsaved package succeeds under the policy"), Result.bSuccess);
+
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPExecutorRejectsUnvalidatedPlanTest,
 	"UE5MCP.Executor.RejectsUnvalidatedPlan", UE5MCPTests::KernelTestFlags)
 bool FUE5MCPExecutorRejectsUnvalidatedPlanTest::RunTest(const FString& Parameters)

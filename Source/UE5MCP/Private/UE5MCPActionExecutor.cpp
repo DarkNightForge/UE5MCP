@@ -14,6 +14,8 @@
 #include "Engine/World.h"
 #include "FileHelpers.h"
 #include "GameFramework/Actor.h"
+#include "HAL/FileManager.h"
+#include "Misc/PackageName.h"
 #include "ISourceControlModule.h"
 #include "ISourceControlProvider.h"
 #include "ISourceControlState.h"
@@ -27,6 +29,7 @@
 #include "UE5MCPEditorService.h"
 #include "UE5MCPSettings.h"
 #include "UE5MCPTargetResolver.h"
+#include "UE5MCPToolRegistry.h"
 
 #define LOCTEXT_NAMESPACE "FUE5MCPActionExecutor"
 
@@ -61,6 +64,12 @@ FUE5MCPExecutionResult FUE5MCPActionExecutor::ExecuteApprovedPlan(const FUE5MCPV
 	for (const FUE5MCPResolvedAction& ResolvedAction : Plan.Actions)
 	{
 		FUE5MCPActionResult ActionResult;
+		if (IsBlockedByPackageWritePolicy(ResolvedAction, ActionResult))
+		{
+			// ActionResult carries the package_not_writable refusal; skip dispatch so
+			// the mutation never dirties a package that could not be saved.
+		}
+		else
 		switch (ResolvedAction.Action.Type)
 		{
 		case EUE5MCPActionType::SetActorFolder:
@@ -1262,6 +1271,128 @@ FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteGetPackageStatus(const FUE5MCP
 		*Result.SourceControl.ProviderName,
 		Result.bPackagesTruncated ? TEXT(" (truncated at cap)") : TEXT(""));
 	return Result;
+}
+
+bool FUE5MCPActionExecutor::EvaluatePackageWritability(bool bFileExists, bool bFileReadOnly,
+	bool bSourceControlEnabled, const FString& SourceControlState, FString& OutReason)
+{
+	OutReason.Reset();
+	// A package with no file yet will be created on save — always writable.
+	if (!bFileExists)
+	{
+		return true;
+	}
+	// Someone else holds it: even if locally writable, a save would clobber/conflict.
+	if (bSourceControlEnabled && SourceControlState == TEXT("checked_out_other"))
+	{
+		OutReason = TEXT("checked_out_by_other");
+		return false;
+	}
+	// A file we already hold for edit is writable regardless of the on-disk flag.
+	if (SourceControlState == TEXT("checked_out") || SourceControlState == TEXT("added"))
+	{
+		return true;
+	}
+	// The universal "save will fail" signal: the file is read-only on disk. Under
+	// Perforce that means it is not checked out; with no source control it means the
+	// file is genuinely read-only. Git (no read-only, no locks) never trips this.
+	if (bFileReadOnly)
+	{
+		OutReason = bSourceControlEnabled ? TEXT("needs_checkout") : TEXT("read_only_on_disk");
+		return false;
+	}
+	return true;
+}
+
+FString FUE5MCPActionExecutor::DescribeActionPackages(const FUE5MCPResolvedAction& ResolvedAction, bool& bOutBlocked)
+{
+	bOutBlocked = false;
+	const FUE5MCPAction& Action = ResolvedAction.Action;
+
+	// Gather the packages this action would dirty: each target actor's package, plus
+	// the editor world's package for spawns (which create actors into the level).
+	TSet<UPackage*> Packages;
+	for (const TWeakObjectPtr<AActor>& ActorPtr : Action.TargetActors)
+	{
+		if (AActor* Actor = ActorPtr.Get())
+		{
+			if (IsValid(Actor)) { Packages.Add(Actor->GetPackage()); }
+		}
+	}
+	if (Action.Type == EUE5MCPActionType::SpawnActorFromClass && GEditor)
+	{
+		if (UWorld* World = GEditor->GetEditorWorldContext().World())
+		{
+			Packages.Add(World->GetPackage());
+		}
+	}
+	if (Packages.IsEmpty())
+	{
+		return FString();
+	}
+
+	ISourceControlModule& SCModule = ISourceControlModule::Get();
+	ISourceControlProvider& Provider = SCModule.GetProvider();
+	const bool bScEnabled = SCModule.IsEnabled();
+	const bool bScAvailable = bScEnabled && Provider.IsAvailable();
+
+	TArray<FString> Notes;
+	for (UPackage* Package : Packages)
+	{
+		if (!Package) { continue; }
+		const FString PackageName = Package->GetName();
+		FString Filename;
+		const bool bExists = FPackageName::DoesPackageExist(PackageName, &Filename);
+		const bool bReadOnly = bExists && !Filename.IsEmpty() && IFileManager::Get().IsReadOnly(*Filename);
+		FString ScState = TEXT("source_control_disabled");
+		if (bScAvailable && !Filename.IsEmpty())
+		{
+			ScState = ClassifySourceControlState(Provider.GetState(Filename, EStateCacheUsage::Use));
+		}
+		FString Reason;
+		if (EvaluatePackageWritability(bExists, bReadOnly, bScEnabled, ScState, Reason))
+		{
+			Notes.Add(FString::Printf(TEXT("%s (writable)"), *PackageName));
+		}
+		else
+		{
+			bOutBlocked = true;
+			Notes.Add(FString::Printf(TEXT("%s (NOT WRITABLE: %s)"), *PackageName, *Reason));
+		}
+	}
+	return TEXT("packages: ") + FString::Join(Notes, TEXT("; "));
+}
+
+bool FUE5MCPActionExecutor::IsBlockedByPackageWritePolicy(const FUE5MCPResolvedAction& ResolvedAction, FUE5MCPActionResult& OutResult)
+{
+	const FUE5MCPAction& Action = ResolvedAction.Action;
+	// Only mutations that actually dirty a package are gated. Read-only tools and
+	// select_actors (selection is transient, never saved) are never blocked.
+	if (Action.Risk == EUE5MCPRiskLevel::ReadOnly || Action.Type == EUE5MCPActionType::SelectActors)
+	{
+		return false;
+	}
+	if (!GetDefault<UUE5MCPSettings>()->bBlockMutationsToUnwritablePackages)
+	{
+		return false;
+	}
+
+	bool bBlocked = false;
+	const FString PackageNote = DescribeActionPackages(ResolvedAction, bBlocked);
+	if (!bBlocked)
+	{
+		return false;
+	}
+
+	const FUE5MCPToolDescriptor* Tool = FUE5MCPToolRegistry::FindByType(Action.Type);
+	const FString ToolName = Tool ? Tool->ToolName : TEXT("mutation");
+	OutResult.ActionId = Action.Id;
+	OutResult.bSuccess = false;
+	OutResult.RefusalCode = TEXT("package_not_writable");
+	OutResult.Message = FString::Printf(
+		TEXT("Rejected %s: a target package cannot be saved — %s. Check it out / make it writable first, or disable the package-write policy in Project Settings."),
+		*ToolName, *PackageNote);
+	return true;
 }
 
 namespace

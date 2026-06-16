@@ -139,6 +139,7 @@ These are the exact `RefusalCode` strings emitted by `FUE5MCPEditorService` /
 | `external_approval_disabled` | `execute_external` used but `bAllowExternalSessionApproval` is false | `execute_external` (403) |
 | `play_mode_active` | Play-In-Editor active; mutations are blocked | `execute_external`, panel approve |
 | `editor_unavailable` | No editor or no open world | `execute_external`, panel approve |
+| `package_not_writable` | A mutation would dirty a package the editor cannot save — read-only / not-checked-out on disk, or checked out by another user. Check it out / make it writable first, or disable the package-write policy. Gated per-action; new/unsaved + writable packages are unaffected | `execute_external`, panel approve |
 | `stale_context` | World or selection changed after the plan was generated | `execute_external`, panel approve |
 | `plan_pending` | Another plan is already pending approval; wait or poll it | submit / external |
 | `plan_consumed` | The plan already executed; regenerate the preview to run again | panel approve |

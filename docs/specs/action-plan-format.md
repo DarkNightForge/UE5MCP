@@ -206,6 +206,12 @@ are **runtime-only** and cannot be decided from the plan JSON alone:
   is project config, so it is enforced RUNTIME-ONLY by the C++ validator + executor.
   The script checks the schema part of `set_actor_property` (a non-empty `property`
   and a well-formed `value`) but not allowlist membership, type match, or range.
+- **Package-write policy** — a runtime, executor-only guard (like the play-mode
+  guard): a mutation that would dirty a package the editor cannot save (read-only /
+  not-checked-out on disk, or checked out by another user) is refused per-action with
+  `package_not_writable`. New/unsaved and writable packages are unaffected, so no-source-control
+  workflows are never blocked. Toggleable via `bBlockMutationsToUnwritablePackages`
+  (default on); the live preview surfaces each mutation's target package writability.
 
 ## Execution result
 

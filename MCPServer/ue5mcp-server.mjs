@@ -20,6 +20,11 @@
 //               spawn_actor_from_class)
 //               → the MCP client's native tool-permission prompt is the human
 //                 approval; users may session-allowlist consciously.
+// Mutations are additionally gated by the plugin's package-write policy: a mutation
+// that would dirty a package the editor cannot save (read-only / not-checked-out, or
+// checked out by someone else) is refused with `package_not_writable` — check the file
+// out or make it writable first. Previews surface each target package's writability.
+//
 //   destructive tools (delete_actor)
 //               → keep on the client's "ask" list so they ALWAYS prompt.
 // When the client supports MCP elicitation, mutating calls additionally show

@@ -3,6 +3,7 @@
 #include "UE5MCPPlanValidator.h"
 
 #include "GameFramework/Actor.h"
+#include "UE5MCPActionExecutor.h"
 #include "UE5MCPPreviewModel.h"
 #include "UE5MCPSettings.h"
 #include "UE5MCPTargetResolver.h"
@@ -278,6 +279,18 @@ FUE5MCPPlanValidationResult FUE5MCPPlanValidator::ValidateAndResolve(const FUE5M
 			}
 		}
 		Resolved.PreviewText = FUE5MCPPreviewModel::BuildPreviewText(Resolved);
+		// Surface package writability in the preview for mutations that dirty a package
+		// (everything mutating except transient selection), so the human sees blast
+		// radius — and any not-writable / not-checked-out target — before approving.
+		if (Tool->Risk != EUE5MCPRiskLevel::ReadOnly && Tool->ActionType != EUE5MCPActionType::SelectActors)
+		{
+			bool bPackagesBlocked = false;
+			const FString PackageNote = FUE5MCPActionExecutor::DescribeActionPackages(Resolved, bPackagesBlocked);
+			if (!PackageNote.IsEmpty())
+			{
+				Resolved.PreviewText += TEXT("\n  ") + PackageNote;
+			}
+		}
 		Result.Plan.Actions.Add(Resolved);
 	}
 

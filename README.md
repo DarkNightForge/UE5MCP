@@ -29,7 +29,7 @@ We do **not** try to out-breadth the exec-everything approach. We win where brea
 
 ## Status — honest accounting
 
-- **Verified:** builds clean as a drop-in **project plugin** and passes **72/72** headless automation tests on **Unreal Engine 5.7.4** (Linux source build). Live runs with an external Claude Code client building and fully undoing an organized scene through the approval boundary.
+- **Verified:** builds clean as a drop-in **project plugin** and passes **74/74** headless automation tests on **Unreal Engine 5.7.4** (Linux source build). Live runs with an external Claude Code client building and fully undoing an organized scene through the approval boundary.
 - **Not yet verified:** Epic Games Launcher **binary** builds and **Windows**. Treat those as untested until confirmed.
 - **Beta, v0.1.** 8 typed actions today (see below). Breadth is the roadmap, not the claim.
 

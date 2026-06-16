@@ -109,4 +109,15 @@ public:
 	 *  no arbitrary property write. Projects widen this consciously, never implicitly. */
 	UPROPERTY(config, EditAnywhere, Category = "Property Policy")
 	TArray<FUE5MCPPropertyAllowEntry> PropertyAllowlist;
+
+	/** When enabled (default), the executor refuses any mutation that would dirty a
+	 *  package it could not save: a package whose on-disk file is read-only (e.g. an
+	 *  unchecked-out Perforce file) or that source control reports checked out by
+	 *  someone else. New/unsaved packages and writable files are unaffected, so solo
+	 *  / no-source-control workflows are never blocked. Disable to let mutations dirty
+	 *  packages regardless of writability (e.g. when an external save pipeline handles
+	 *  checkout). */
+	UPROPERTY(config, EditAnywhere, Category = "Package Policy",
+		meta = (DisplayName = "Block mutations to unwritable / not-checked-out packages"))
+	bool bBlockMutationsToUnwritablePackages = true;
 };

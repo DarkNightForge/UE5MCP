@@ -1,7 +1,7 @@
 # UE5MCP capability map
 
 Status: living product/planning document  
-Last updated: 2026-06-16 (added component-by-name addressing — optional `component_name` on `set_actor_property`/`get_actor_properties` resolves the `ambiguous_component` case; suite verified 72/72 in-editor)  
+Last updated: 2026-06-16 (added the package-write policy on mutations — previews surface package writability and the executor refuses `package_not_writable` for read-only / checked-out-by-other packages; suite verified 74/74 in-editor)  
 Source of truth for current tools: `Source/UE5MCP/Private/UE5MCPToolRegistry.cpp`, `docs/specs/action-plan-format.md`, `docs/specs/preview-approval-flow.md`, and `docs/validation-checklist.md`.
 
 This document tracks **breadth**: which parts of Unreal Engine development UE5MCP can currently observe, preview, mutate, refuse, and verify.
@@ -65,7 +65,7 @@ Registry tools in v1:
 Current verification snapshot:
 
 - Public repo Python checks: `116 passed` in the last local verification run.
-- UE automation suite is now **72/72 passing**, verified in a headless in-editor run on UE 5.7.4 (Linux source build) — including the `read_logs`, label/tag, `get_package_status`, `get_actor_properties` (read-only discovery + `ambiguous_component` refusal), `get_actor_components` (read-only component discovery), component-by-name addressing (`set_actor_property`/`get_actor_properties` with `component_name`), and `set_actor_property` (scalar + enum/struct-member/asset value-kind) tests.
+- UE automation suite is now **74/74 passing**, verified in a headless in-editor run on UE 5.7.4 (Linux source build) — including the `read_logs`, label/tag, `get_package_status`, `get_actor_properties`/`get_actor_components` discovery, component-by-name addressing, the package-write policy (`UE5MCP.Executor.PackageWritabilityPolicyMatrix` + `UnsavedPackageMutationAllowedUnderPolicy`), and `set_actor_property` (scalar + enum/struct-member/asset value-kind) tests.
 - Windows and Epic Games Launcher binary builds are not yet verified.
 - Full tool breadth is still actor/world-editor focused; most asset/Blueprint/team-pipeline workflows are not shipped.
 
@@ -148,7 +148,7 @@ Current verification snapshot:
 | Status | `partial` — allowlisted scalar/bool/vector/color/name/enum/asset + struct-member edits + component-by-name addressing shipped; read-only `get_actor_properties` + `get_actor_components` discovery shipped |
 | Current support | `set_actor_property` writes a `(class, property, type)` tuple from `PropertyAllowlist` on the target actor or one of its components, resolved via reflection. Value kinds: float/int/bool/vector/color/name, **enum** (by value-name), **asset** (by path, constrained to the entry's `AssetClass`). `property` may be a dotted **struct-member sub-path** (e.g. `PostProcessSettings.BloomIntensity`), and an entry may set a paired **override flag** (e.g. `bOverride_BloomIntensity`). Optional numeric range, before→after preview, one undoable transaction, and machine-readable refusals (`property_not_allowlisted` — returning the allowed set — `property_type_mismatch`, `property_value_out_of_range`, `property_value_invalid_enum`, `asset_not_found`/`asset_class_not_allowed`, `property_not_found`, `ambiguous_component`, `override_flag_not_found`). Enforced in the validator (R12) AND re-checked in the executor. **Read side:** `get_actor_properties` enumerates the first target's (or a uniquely-resolved component's) reflected properties via `TFieldIterator`, reporting per property `cpp_type`, `current_value`, `editable`, `differs_from_default` (archetype compare), `allowlisted` + allowed type/range, and advisory `ClampMin/ClampMax` — defaulting to exactly the writable surface. |
 | Missing | Array/map/set container elements, deeper-than-one struct nesting verification, wider default allowlist, allowlist scoping by component name (today `component_name` selects an instance but the allowlist remains class-scoped, which is the intended safety model). |
-| Next useful slice | Either widen the default `PropertyAllowlist` (no engine work — just entries, surfaced by `get_actor_properties`), or move up a level to the package-write policy on mutations (L6) — surface `get_package_status` in mutation previews and refuse writes to not-checked-out packages. |
+| Next useful slice | Widen the default `PropertyAllowlist` (no engine work — just entries, surfaced by `get_actor_properties`); the package-write policy (domain 13) now already guards every dirtying mutation. |
 | Proof needed | No arbitrary property write — verified by `UE5MCP.Executor.SetAllowlistedPropertyUndoAndRefusesNonAllowlisted` (allowlisted write + undo/redo; non-allowlisted refused), `UE5MCP.Executor.SetPropertyEnumStructAssetKinds` (enum/struct-member+override/asset writes + undo + invalid-enum/wrong-class refusals), `UE5MCP.Json.ParsesSetPropertyValueKinds`; read-side discovery by `UE5MCP.Tools.GetActorPropertiesListsAllowlistedWithValues` (allowlisted listing + values + `ambiguous_component` refusal), `UE5MCP.Tools.GetActorComponentsListsInstanceAndNative` (native + instance components with creation-method), `UE5MCP.Json.ParsesGetActorPropertiesQuery`, and `UE5MCP.Json.ParsesGetActorComponentsQuery`; component-by-name addressing by `UE5MCP.Executor.SetPropertyByComponentNameDisambiguates` (two same-class components — named write changes only one, ambiguous without a name, undo), `UE5MCP.Tools.GetActorPropertiesByComponentName` (named read + `component_not_found`), and `UE5MCP.Json.ParsesComponentName`. |
 
 ### 9. Blueprint workflows
@@ -195,11 +195,11 @@ Current verification snapshot:
 
 | Field | Current state |
 | --- | --- |
-| Status | `partial` — read-only status shipped; no SC mutation |
-| Current support | `get_package_status` reports the dirty package set plus a source-control summary (provider, enabled/available) and per-package cached SC state token (`checked_out`, `not_current`, `not_controlled`, `source_control_disabled`, …). Cache-only: it never starts a Perforce/Git network call from a model request. Editor changes still participate in the normal save flow; UE5MCP does not manage checkouts/changelists. |
-| Missing | Checkout/add/revert, changelist routing, read-only-package mutation refusal, explicit SC refresh (opt-in network call), conflict handling. |
-| Next useful slice | Wire `get_package_status` into mutation previews (show packages a plan will dirty) and add a policy that refuses mutations against not-writable/not-checked-out packages. |
-| Proof needed | Any mutation that dirties packages reports the exact package list and refuses when package state is not writable/checked out as policy requires. |
+| Status | `partial` — read-only status + **package-write policy on mutations** shipped; no SC mutation (checkout/add/revert) yet |
+| Current support | `get_package_status` reports the dirty package set plus a source-control summary (provider, enabled/available) and per-package cached SC state token (`checked_out`, `not_current`, `not_controlled`, `source_control_disabled`, …). Cache-only: it never starts a Perforce/Git network call from a model request. **Package-write policy:** every mutation preview surfaces the writability of the packages it would dirty, and the executor refuses (`package_not_writable`) any mutation that would dirty a package the editor cannot save — read-only / not-checked-out on disk (the universal "save will fail" signal, e.g. an unchecked-out Perforce file) or checked out by another user. New/unsaved + writable packages are unaffected, so no-source-control / solo workflows are never blocked. Toggleable (`bBlockMutationsToUnwritablePackages`, default on). UE5MCP still does not manage checkouts/changelists. |
+| Missing | Checkout/add/revert, changelist routing, explicit SC refresh (opt-in network call), conflict handling. |
+| Next useful slice | Governed checkout (`check_out_package`): an opt-in, allowlisted action that checks a package out so a blocked mutation can proceed — the first SC *write*, still previewed/approved. |
+| Proof needed | Any mutation that dirties packages reports the exact package list and refuses when package state is not writable/checked out — covered by `UE5MCP.Executor.PackageWritabilityPolicyMatrix` + `UE5MCP.Executor.UnsavedPackageMutationAllowedUnderPolicy`. |
 
 ### 14. World Partition, levels, sublevels, streaming
 
@@ -375,13 +375,14 @@ Current verification snapshot:
 
 Ranked by leverage and fit with the governed model:
 
-1. **Package-write policy on mutations** (`L6`) — surface `get_package_status` in mutation previews and refuse mutations against not-writable/not-checked-out packages (the next step after the readback). This is now the highest-leverage slice — it unlocks the studio-adoption story.
+1. **Capability registry / `list_capabilities`** (`L0`) — lets agents know exactly what is possible now (tools, params, allowlists) and prevents hallucinated tools. Cheap, high-leverage for agent reliability.
 2. **Read-only Blueprint/material/asset inspection** (`L0`) — expands project understanding before risky mutation.
-3. **Capability registry / `list_capabilities`** (`L0`) — lets agents know exactly what is possible now and prevents hallucinated tools.
+3. **Governed checkout** (`L6`) — `check_out_package`: opt-in, allowlisted, previewed/approved SC checkout so a `package_not_writable`-blocked mutation can proceed. The first SC *write*; the natural follow-on to the package-write policy.
 4. **Widen the default `PropertyAllowlist`** — pure config (no engine work); the cine-camera + `FPostProcessSettings` members are already addressable and `get_actor_properties` surfaces them.
 
 Shipped since last revision:
 
+- **Package-write policy on mutations** (`L6`) — previews surface the writability of every package a mutation would dirty, and the executor refuses `package_not_writable` for read-only / checked-out-by-other packages. The studio-adoption guardrail. See domain 13.
 - **Component-by-name addressing** (`L3`) — optional `component_name` on `set_actor_property`/`get_actor_properties` targets one component among several of the same class (instance selector, never widens policy) — resolves the `ambiguous_component` case. See domain 8.
 - **Read-only component discovery** (`L0`) — `get_actor_components`: lists a target's components (name/class/creation-method/attach-parent/tags/editable) so an agent can name the component to address. See domain 8.
 - **Read-only property discovery** (`L0`) — `get_actor_properties`: lists a target's reflected properties with current values, defaulting to exactly the `set_actor_property`-writable surface — removes the guess-and-get-refused loop. See domain 8.
@@ -406,7 +407,7 @@ Shipped since last revision:
 | Dim/recolor a light → preview → undo | allowlisted typed property edit + refusal of non-allowlisted | ready — `set_actor_property` shipped (light Intensity/LightColor) |
 | Read logs and self-correct | refusal/error recovery loop | ready — `read_logs` shipped (read-only, capped, filtered) |
 | Package/source-control status readback | blast-radius + SC visibility before saving | ready — `get_package_status` shipped (read-only, cache-only) |
-| Source-control-safe package mutation | studio adoption proof | partial — readback shipped; mutation refusal policy still needed |
+| Source-control-safe package mutation | studio adoption proof | ready — package-write policy shipped: mutations to read-only / checked-out-by-other packages refused (`package_not_writable`), writability surfaced in every mutation preview |
 
 ## Rules: when to update this document
 
