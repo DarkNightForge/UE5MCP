@@ -35,6 +35,9 @@ SKIP_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__", ".pytest_ca
 DEFAULT_DENYLIST = os.path.join(
     os.path.expanduser("~"), ".config", "orbitforge", "denylist.txt"
 )
+DEFAULT_ALLOWED_AUTHORS = os.path.join(
+    os.path.expanduser("~"), ".config", "orbitforge", "allowed-authors.txt"
+)
 
 LEAK_PATTERNS = [
     ("home-path", re.compile(r"(?i)/(?:home|users)/[A-Za-z0-9._-]+")),
@@ -69,6 +72,28 @@ def load_denylist(path=None):
                 escaped = r"\b" + escaped + r"\b"
             terms.append((term, re.compile(escaped, re.IGNORECASE)))
     return terms, path
+
+
+def load_allowed_authors(path=None):
+    """Return a set of lowercased commit-author emails accepted in git history,
+    in addition to the GitHub noreply suffix. The check still flags UNEXPECTED
+    authors (a leaked corporate address, a co-author's private email); this just
+    accepts the project's own published identity. Sourced from
+    ORBITFORGE_ALLOWED_AUTHORS (comma-separated) or an external allowed-authors
+    file (one email per line) — kept OUTSIDE the repo so this public script
+    never hardcodes an identity, mirroring the denylist."""
+    emails = set()
+    env = os.environ.get("ORBITFORGE_ALLOWED_AUTHORS")
+    if env:
+        emails.update(part.strip().lower() for part in env.split(",") if part.strip())
+    path = path or DEFAULT_ALLOWED_AUTHORS
+    if os.path.isfile(path):
+        with open(path, encoding="utf-8") as fh:
+            for raw in fh:
+                term = raw.strip()
+                if term and not term.startswith("#"):
+                    emails.add(term.lower())
+    return emails
 
 
 def _git_listed_files(root):
@@ -145,7 +170,7 @@ def scan_links(path, text):
     return findings
 
 
-def scan_history(root, denylist):
+def scan_history(root, denylist, allowed_authors=frozenset()):
     """Scan all commits (refs + reflog) for leak patterns and author identity."""
     findings = []
     if not os.path.isdir(os.path.join(root, ".git")):
@@ -160,8 +185,14 @@ def scan_history(root, denylist):
     log_args = ("log", "--all", "--reflog")
     for line in git(*log_args, "--format=%h %an <%ae>").splitlines():
         line = line.strip()
-        if line and not line.rstrip(">").endswith(NOREPLY_SUFFIX):
-            findings.append(("git-history", 0, "history-author", line))
+        if not line:
+            continue
+        if line.rstrip(">").endswith(NOREPLY_SUFFIX):
+            continue
+        email = line[line.rfind("<") + 1:-1].strip().lower() if line.endswith(">") and "<" in line else ""
+        if email and email in allowed_authors:
+            continue
+        findings.append(("git-history", 0, "history-author", line))
 
     for lineno, line in enumerate(
         git(*log_args, "-p", "--format=commit %h %s").splitlines(), 1
@@ -181,12 +212,13 @@ def scan_history(root, denylist):
 def run(root=None, denylist_path=None, include_history=True):
     root = root or REPO_ROOT
     denylist, used_path = load_denylist(denylist_path)
+    allowed_authors = load_allowed_authors()
     findings = []
     for path, text in iter_text_files(root):
         findings.extend(scan_leaks(path, text, denylist))
         findings.extend(scan_links(path, text))
     if include_history:
-        findings.extend(scan_history(root, denylist))
+        findings.extend(scan_history(root, denylist, allowed_authors))
     return findings, denylist, used_path
 
 
