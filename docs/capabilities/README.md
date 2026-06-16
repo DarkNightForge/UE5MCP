@@ -1,7 +1,7 @@
 # UE5MCP capability map
 
 Status: living product/planning document  
-Last updated: 2026-06-15 (added `set_actor_property` allowlisted edits; suite verified 64/64 in-editor)  
+Last updated: 2026-06-15 (added `set_actor_property` reflection value-kind expansion — enum/asset/struct-member/override; suite verified 65/65 in-editor)  
 Source of truth for current tools: `Source/UE5MCP/Private/UE5MCPToolRegistry.cpp`, `docs/specs/action-plan-format.md`, `docs/specs/preview-approval-flow.md`, and `docs/validation-checklist.md`.
 
 This document tracks **breadth**: which parts of Unreal Engine development UE5MCP can currently observe, preview, mutate, refuse, and verify.
@@ -54,7 +54,7 @@ Registry tools in v1:
 | `set_actor_label` | low mutation | Metadata / naming | Sets each target's editor display label; empty label refused as no-op; display-only (not forced unique). |
 | `add_actor_tags` | low mutation | Metadata / tagging | Adds tags to each target's `AActor.Tags`; idempotent; empty list refused as no-op. |
 | `remove_actor_tags` | low mutation | Metadata / tagging | Removes tags from each target's `AActor.Tags`; idempotent; empty list refused as no-op. |
-| `set_actor_property` | low mutation | Allowlisted properties | Writes one allowlisted `(class, property, type)` on each target or one of its components via reflection; type-safe, range-checked, before→after preview, one undo; anything off `PropertyAllowlist` refused (refusal lists allowed). Default allowlist: light Intensity + LightColor. |
+| `set_actor_property` | low mutation | Allowlisted properties | Writes one allowlisted `(class, property, type)` on each target or one of its components via reflection. Types: float/int/bool/vector/color/name/**enum** (by value-name)/**asset** (by path, class-constrained); `property` may be a dotted **struct-member path**; optional paired **override flag**. Type-safe, range-checked, before→after preview, one undo; anything off `PropertyAllowlist` refused (refusal lists allowed). Default allowlist: light Intensity/LightColor/IntensityUnits, camera `PostProcessSettings.BloomIntensity`, mesh `StaticMesh`. |
 | `set_actor_transform` | low mutation | Spatial layout | Sets absolute location/rotation/scale components; omitted components unchanged; no-op refused. |
 | `duplicate_actor_with_offset` | low mutation | Spatial layout | Duplicates target actors once with a typed offset. |
 | `spawn_actor_from_class` | low mutation | Bounded creation | Spawns allowlisted classes/meshes, max 25 instances/action. |
@@ -62,8 +62,8 @@ Registry tools in v1:
 
 Current verification snapshot:
 
-- Public repo Python checks: `100 passed` in the last local verification run.
-- UE automation suite is now **64/64 passing**, verified in a headless in-editor run on UE 5.7.4 (Linux source build) — including the `read_logs`, label/tag, `get_package_status`, and `set_actor_property` tests.
+- Public repo Python checks: `102 passed` in the last local verification run.
+- UE automation suite is now **65/65 passing**, verified in a headless in-editor run on UE 5.7.4 (Linux source build) — including the `read_logs`, label/tag, `get_package_status`, and `set_actor_property` (scalar + enum/struct-member/asset value-kind) tests.
 - Windows and Epic Games Launcher binary builds are not yet verified.
 - Full tool breadth is still actor/world-editor focused; most asset/Blueprint/team-pipeline workflows are not shipped.
 
@@ -143,11 +143,11 @@ Current verification snapshot:
 
 | Field | Current state |
 | --- | --- |
-| Status | `partial` — allowlisted scalar/bool/vector/color/name edits shipped |
-| Current support | `set_actor_property` writes a `(class, property, type)` tuple from `PropertyAllowlist` on the target actor or one of its components, resolved via reflection. Type-safe (float/int/bool/vector/color/name), optional numeric range, before→after preview, one undoable transaction, and machine-readable refusals (`property_not_allowlisted` — returning the allowed set — `property_type_mismatch`, `property_value_out_of_range`, `property_not_found`, `ambiguous_component`). Enforced in the validator (R12) AND re-checked in the executor. |
-| Missing | Read-only property/component enumeration tool (`get_actor_properties`), component addressing by instance name, struct-member paths, array/map properties, wider default allowlist. |
+| Status | `partial` — allowlisted scalar/bool/vector/color/name/enum/asset + struct-member edits shipped |
+| Current support | `set_actor_property` writes a `(class, property, type)` tuple from `PropertyAllowlist` on the target actor or one of its components, resolved via reflection. Value kinds: float/int/bool/vector/color/name, **enum** (by value-name), **asset** (by path, constrained to the entry's `AssetClass`). `property` may be a dotted **struct-member sub-path** (e.g. `PostProcessSettings.BloomIntensity`), and an entry may set a paired **override flag** (e.g. `bOverride_BloomIntensity`). Optional numeric range, before→after preview, one undoable transaction, and machine-readable refusals (`property_not_allowlisted` — returning the allowed set — `property_type_mismatch`, `property_value_out_of_range`, `property_value_invalid_enum`, `asset_not_found`/`asset_class_not_allowed`, `property_not_found`, `ambiguous_component`, `override_flag_not_found`). Enforced in the validator (R12) AND re-checked in the executor. |
+| Missing | Read-only property/component enumeration tool (`get_actor_properties`), component addressing by instance name, array/map/set container elements, deeper-than-one struct nesting verification, wider default allowlist. |
 | Next useful slice | A read-only `get_actor_properties` listing the allowlisted-editable properties + current values per target (discovery without trial-and-error). |
-| Proof needed | No arbitrary property write — verified by `UE5MCP.Executor.SetAllowlistedPropertyUndoAndRefusesNonAllowlisted` (allowlisted write + undo/redo; non-allowlisted refused) and `UE5MCP.Json.ParsesSetPropertyValueKinds`. |
+| Proof needed | No arbitrary property write — verified by `UE5MCP.Executor.SetAllowlistedPropertyUndoAndRefusesNonAllowlisted` (allowlisted write + undo/redo; non-allowlisted refused), `UE5MCP.Executor.SetPropertyEnumStructAssetKinds` (enum/struct-member+override/asset writes + undo + invalid-enum/wrong-class refusals), and `UE5MCP.Json.ParsesSetPropertyValueKinds`. |
 
 ### 9. Blueprint workflows
 
@@ -213,11 +213,11 @@ Current verification snapshot:
 
 | Field | Current state |
 | --- | --- |
-| Status | `partial` — spawn/transform + allowlisted light Intensity/LightColor edits |
-| Current support | Can spawn allowlisted `PointLight` and `CameraActor` and transform actors; `set_actor_property` edits light `Intensity` (float, ranged) and `LightColor` (rgba) on the standard light components with preview + undo. |
-| Missing | Camera/lens settings, attenuation/falloff, IES profiles, Sequencer integration, shot creation, render preview. |
-| Next useful slice | Widen the property allowlist to camera transform/lens params and more light params, plus the `get_actor_properties` discovery tool. |
-| Proof needed | Preview before/after values and preserve undo (met for light intensity/color). |
+| Status | `partial` — spawn/transform + allowlisted light Intensity/LightColor/IntensityUnits, camera post-process struct members |
+| Current support | Can spawn allowlisted `PointLight` and `CameraActor` and transform actors. `set_actor_property` now covers all three value-kinds this area needed: light `Intensity` (float, ranged) and `LightColor` (rgba); `IntensityUnits` (**enum** by value-name); and camera `PostProcessSettings.BloomIntensity` (**struct-member sub-path** with its paired `bOverride_` flag) — all previewed + undoable. The machinery to reach the rest of the lens/filmback/focus/FPostProcessSettings surface (struct paths + enum + asset-ref + override pairing) is shipped. |
+| Missing | Just allowlist breadth now: cine-camera lens/filmback/focus fields, the full `FPostProcessSettings` member set, attenuation/falloff, IES texture asset assignment (asset-ref), light function materials; plus Sequencer integration (area 16), shot creation, render preview. |
+| Next useful slice | Widen `PropertyAllowlist` to the cine-camera + FPostProcessSettings members (no new engine work — just entries), plus the `get_actor_properties` discovery tool. |
+| Proof needed | Preview before/after + undo (met for intensity/color/units and a post-process struct member via `UE5MCP.Executor.SetPropertyEnumStructAssetKinds`). |
 
 ### 16. Sequencer and cinematics
 

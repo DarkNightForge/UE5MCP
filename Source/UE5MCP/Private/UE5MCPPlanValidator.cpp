@@ -130,7 +130,9 @@ FUE5MCPPlanValidationResult FUE5MCPPlanValidator::ValidateAndResolve(const FUE5M
 						(Type == TEXT("bool") && Kind == FUE5MCPPropertyValue::EKind::Bool) ||
 						(Type == TEXT("vector") && Kind == FUE5MCPPropertyValue::EKind::Vector) ||
 						(Type == TEXT("color") && Kind == FUE5MCPPropertyValue::EKind::Color) ||
-						(Type == TEXT("name") && Kind == FUE5MCPPropertyValue::EKind::Name);
+						// name / enum / asset all arrive as a JSON string; the live property
+						// type (FName/FStr vs enum vs object) disambiguates in the executor.
+						((Type == TEXT("name") || Type == TEXT("enum") || Type == TEXT("asset")) && Kind == FUE5MCPPropertyValue::EKind::Name);
 					if (!bKindMatches)
 					{
 						continue;

@@ -389,6 +389,19 @@ class SetPropertyTests(unittest.TestCase):
         plan = self.property_plan({"property": "Intensity", "value": 1, "units": "lux"})
         self.assertIn("R9", rules(validate_plan(plan)))
 
+    def test_dotted_struct_member_path_is_valid(self):
+        # The schema validator treats a dotted property path as a non-empty string;
+        # struct-member resolution + allowlist membership (R12) are runtime-only.
+        self.assertEqual(
+            validate_plan(self.property_plan({"property": "PostProcessSettings.BloomIntensity", "value": 2.0})), []
+        )
+
+    def test_enum_and_asset_string_values_are_valid(self):
+        self.assertEqual(validate_plan(self.property_plan({"property": "IntensityUnits", "value": "Lumens"})), [])
+        self.assertEqual(
+            validate_plan(self.property_plan({"property": "StaticMesh", "value": "/Engine/BasicShapes/Cube.Cube"})), []
+        )
+
     def test_requires_targets(self):
         plan = self.property_plan({"property": "Intensity", "value": 1})
         plan["actions"][0]["targets"] = []

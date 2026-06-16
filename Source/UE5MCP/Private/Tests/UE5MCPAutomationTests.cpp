@@ -2,11 +2,15 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "Camera/CameraActor.h"
+#include "Camera/CameraComponent.h"
+#include "Components/LocalLightComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "CoreMinimal.h"
 #include "Editor.h"
 #include "Engine/PointLight.h"
+#include "Engine/Scene.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
@@ -292,6 +296,110 @@ bool FUE5MCPExecutorSetPropertyUndoAndRefusalTest::RunTest(const FString& Parame
 	}
 	TestTrue(TEXT("Non-allowlisted property was left unchanged"),
 		FMath::IsNearlyEqual(Comp->AttenuationRadius, RadiusBefore, 0.01f));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPExecutorSetPropertyExtendedKindsTest,
+	"UE5MCP.Executor.SetPropertyEnumStructAssetKinds", UE5MCPTests::KernelTestFlags)
+bool FUE5MCPExecutorSetPropertyExtendedKindsTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+	if (!TestNotNull(TEXT("CreateNewMap returned a world"), World))
+	{
+		return false;
+	}
+
+	auto MakePlan = [](AActor* Actor, const TCHAR* Component, const TCHAR* Property, const FUE5MCPPropertyValue& Value)
+	{
+		FUE5MCPResolvedAction Resolved;
+		Resolved.Action.Id = TEXT("test-set-property-ext");
+		Resolved.Action.Type = EUE5MCPActionType::SetActorProperty;
+		Resolved.Action.Risk = EUE5MCPRiskLevel::LowMutation;
+		Resolved.Action.PropertyComponentClass = Component;
+		Resolved.Action.PropertyName = Property;
+		Resolved.Action.PropertyValue = Value;
+		Resolved.Action.TargetActors.Add(Actor);
+		return UE5MCPTests::WrapPlanForTest(Resolved);
+	};
+
+	// --- ENUM value kind: a point light's IntensityUnits by name ---
+	if (APointLight* Light = World->SpawnActor<APointLight>())
+	{
+		ULocalLightComponent* Comp = Cast<ULocalLightComponent>(Light->GetLightComponent());
+		if (TestNotNull(TEXT("Point light has a local light component"), Comp))
+		{
+			const ELightUnits Original = Comp->IntensityUnits;
+			FUE5MCPPropertyValue Value;
+			Value.Kind = FUE5MCPPropertyValue::EKind::Name;
+			Value.Name = TEXT("Lumens");
+			const FUE5MCPExecutionResult Res = FUE5MCPActionExecutor::ExecuteApprovedPlan(
+				MakePlan(Light, TEXT("/Script/Engine.LocalLightComponent"), TEXT("IntensityUnits"), Value));
+			TestTrue(TEXT("Enum write succeeded"), Res.bSuccess);
+			TestTrue(TEXT("IntensityUnits is now Lumens"), Comp->IntensityUnits == ELightUnits::Lumens);
+			TestTrue(TEXT("Undo"), GEditor->UndoTransaction());
+			TestTrue(TEXT("IntensityUnits restored"), Comp->IntensityUnits == Original);
+
+			// An invalid enum value name is refused, not coerced.
+			FUE5MCPPropertyValue Bad;
+			Bad.Kind = FUE5MCPPropertyValue::EKind::Name;
+			Bad.Name = TEXT("NotARealUnit");
+			const FUE5MCPExecutionResult BadRes = FUE5MCPActionExecutor::ExecuteApprovedPlan(
+				MakePlan(Light, TEXT("/Script/Engine.LocalLightComponent"), TEXT("IntensityUnits"), Bad));
+			TestFalse(TEXT("Invalid enum value refused"), BadRes.bSuccess);
+			if (BadRes.ActionResults.Num() == 1)
+			{
+				TestEqual(TEXT("Refusal code is property_value_invalid_enum"),
+					BadRes.ActionResults[0].RefusalCode, FString(TEXT("property_value_invalid_enum")));
+			}
+		}
+	}
+
+	// --- STRUCT-MEMBER sub-path + paired override: a camera's PostProcessSettings.BloomIntensity ---
+	if (ACameraActor* Cam = World->SpawnActor<ACameraActor>())
+	{
+		UCameraComponent* Comp = Cam->GetCameraComponent();
+		if (TestNotNull(TEXT("Camera has a camera component"), Comp))
+		{
+			const float OriginalBloom = Comp->PostProcessSettings.BloomIntensity;
+			FUE5MCPPropertyValue Value;
+			Value.Kind = FUE5MCPPropertyValue::EKind::Number;
+			Value.Number = 2.0;
+			const FUE5MCPExecutionResult Res = FUE5MCPActionExecutor::ExecuteApprovedPlan(
+				MakePlan(Cam, TEXT("/Script/Engine.CameraComponent"), TEXT("PostProcessSettings.BloomIntensity"), Value));
+			TestTrue(TEXT("Struct-member write succeeded"), Res.bSuccess);
+			TestTrue(TEXT("BloomIntensity set to 2.0"), FMath::IsNearlyEqual(Comp->PostProcessSettings.BloomIntensity, 2.0f, 0.001f));
+			TestTrue(TEXT("Paired override flag set true"), Comp->PostProcessSettings.bOverride_BloomIntensity != 0);
+			TestTrue(TEXT("Undo"), GEditor->UndoTransaction());
+			TestTrue(TEXT("BloomIntensity restored"), FMath::IsNearlyEqual(Comp->PostProcessSettings.BloomIntensity, OriginalBloom, 0.001f));
+			TestTrue(TEXT("Override flag reverted"), Comp->PostProcessSettings.bOverride_BloomIntensity == 0);
+		}
+	}
+
+	// --- ASSET-REF value kind: assign an allowlisted static mesh to a mesh component ---
+	if (AStaticMeshActor* MeshActor = World->SpawnActor<AStaticMeshActor>())
+	{
+		UStaticMeshComponent* Comp = MeshActor->GetStaticMeshComponent();
+		UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+		if (TestNotNull(TEXT("Mesh component present"), Comp) && TestNotNull(TEXT("Cube asset loads"), Cube))
+		{
+			FUE5MCPPropertyValue Value;
+			Value.Kind = FUE5MCPPropertyValue::EKind::Name;
+			Value.Name = TEXT("/Engine/BasicShapes/Cube.Cube");
+			const FUE5MCPExecutionResult Res = FUE5MCPActionExecutor::ExecuteApprovedPlan(
+				MakePlan(MeshActor, TEXT("/Script/Engine.StaticMeshComponent"), TEXT("StaticMesh"), Value));
+			TestTrue(TEXT("Asset write succeeded"), Res.bSuccess);
+			TestTrue(TEXT("Static mesh assigned to the cube"), Comp->GetStaticMesh() == Cube);
+
+			// A non-allowlisted-class asset path is refused.
+			FUE5MCPPropertyValue Bad;
+			Bad.Kind = FUE5MCPPropertyValue::EKind::Name;
+			Bad.Name = TEXT("/Engine/EngineMaterials/DefaultMaterial.DefaultMaterial");
+			const FUE5MCPExecutionResult BadRes = FUE5MCPActionExecutor::ExecuteApprovedPlan(
+				MakePlan(MeshActor, TEXT("/Script/Engine.StaticMeshComponent"), TEXT("StaticMesh"), Bad));
+			TestFalse(TEXT("Wrong-class asset refused"), BadRes.bSuccess);
+		}
+	}
 
 	return true;
 }

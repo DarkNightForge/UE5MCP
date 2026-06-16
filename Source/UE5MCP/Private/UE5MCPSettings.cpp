@@ -43,6 +43,36 @@ UUE5MCPSettings::UUE5MCPSettings()
 		Entry.Type = TEXT("color");
 		return Entry;
 	};
+	auto EnumEntry = [](const TCHAR* Class, const TCHAR* Prop)
+	{
+		FUE5MCPPropertyAllowEntry Entry;
+		Entry.ClassPath = Class;
+		Entry.PropertyName = Prop;
+		Entry.Type = TEXT("enum");
+		return Entry;
+	};
+	// A struct-member sub-path with its paired bOverride_ flag (so the value takes effect).
+	auto StructFloatEntry = [](const TCHAR* Class, const TCHAR* PathProp, const TCHAR* Override, double Min, double Max)
+	{
+		FUE5MCPPropertyAllowEntry Entry;
+		Entry.ClassPath = Class;
+		Entry.PropertyName = PathProp;
+		Entry.Type = TEXT("float");
+		Entry.bHasRange = true;
+		Entry.Min = Min;
+		Entry.Max = Max;
+		Entry.OverrideFlag = Override;
+		return Entry;
+	};
+	auto AssetEntry = [](const TCHAR* Class, const TCHAR* Prop, const TCHAR* AssetClass)
+	{
+		FUE5MCPPropertyAllowEntry Entry;
+		Entry.ClassPath = Class;
+		Entry.PropertyName = Prop;
+		Entry.Type = TEXT("asset");
+		Entry.AssetClass = AssetClass;
+		return Entry;
+	};
 	PropertyAllowlist = {
 		FloatEntry(TEXT("/Script/Engine.PointLightComponent"), TEXT("Intensity"), 0.0, 1000000.0),
 		FloatEntry(TEXT("/Script/Engine.SpotLightComponent"), TEXT("Intensity"), 0.0, 1000000.0),
@@ -50,5 +80,11 @@ UUE5MCPSettings::UUE5MCPSettings()
 		ColorEntry(TEXT("/Script/Engine.PointLightComponent"), TEXT("LightColor")),
 		ColorEntry(TEXT("/Script/Engine.SpotLightComponent"), TEXT("LightColor")),
 		ColorEntry(TEXT("/Script/Engine.DirectionalLightComponent"), TEXT("LightColor")),
+		// Enum value-kind: set a light's intensity units by name (e.g. "Lumens", "Candelas").
+		EnumEntry(TEXT("/Script/Engine.LocalLightComponent"), TEXT("IntensityUnits")),
+		// Struct-member sub-path + paired override: a camera's post-process bloom intensity.
+		StructFloatEntry(TEXT("/Script/Engine.CameraComponent"), TEXT("PostProcessSettings.BloomIntensity"), TEXT("bOverride_BloomIntensity"), 0.0, 8.0),
+		// Asset-ref value-kind: assign an allowlisted static mesh to a mesh component.
+		AssetEntry(TEXT("/Script/Engine.StaticMeshComponent"), TEXT("StaticMesh"), TEXT("/Script/Engine.StaticMesh")),
 	};
 }

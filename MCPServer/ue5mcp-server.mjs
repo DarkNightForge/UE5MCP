@@ -215,17 +215,17 @@ const TOOLS = [
   {
     name: 'set_actor_property',
     risk: 'low_risk',
-    description: 'Set an ALLOWLISTED property on these actors (or one of their components) to a typed value (one undoable transaction). Only (class, property, type) tuples on the plugin\'s PropertyAllowlist are writable — there is no arbitrary property write; anything else is refused, and the refusal lists what is allowed. Default allowlist covers light Intensity (float) and LightColor (rgba) on the standard light components. The value type must match the allowlisted type.',
+    description: 'Set an ALLOWLISTED property on these actors (or one of their components) to a typed value (one undoable transaction). Only (class, property, type) tuples on the plugin\'s PropertyAllowlist are writable — there is no arbitrary property write; anything else is refused, and the refusal lists what is allowed. Supports dotted struct-member paths (e.g. "PostProcessSettings.BloomIntensity"), and the allowlisted type may be float/int, bool, vector [x,y,z], color [r,g,b,a], name, enum (value passed as its string name, e.g. "Lumens"), or asset (value passed as an asset path, class-constrained). Some entries also flip a paired override flag automatically. The value type must match the allowlisted type.',
     inputSchema: {
       type: 'object',
       properties: {
         actor_paths: ACTOR_PATHS_SCHEMA,
-        property: { type: 'string', minLength: 1, description: 'Reflected property name, e.g. "Intensity" or "LightColor".' },
+        property: { type: 'string', minLength: 1, description: 'Reflected property name, or dotted struct-member path, e.g. "Intensity", "IntensityUnits", "StaticMesh", or "PostProcessSettings.BloomIntensity".' },
         value: {
-          description: 'Typed value matching the allowlisted property type: number (float/int), boolean, string (name), [x,y,z] (vector), or [r,g,b,a] linear 0..1 (color).',
+          description: 'Value matching the allowlisted type: number (float/int), boolean, [x,y,z] (vector), [r,g,b,a] linear 0..1 (color), or a string for name / enum value name / asset path.',
           type: ['number', 'boolean', 'string', 'array'],
         },
-        component: { type: 'string', description: 'Optional owning component class path, e.g. "/Script/Engine.PointLightComponent". Omit to target a property on the actor itself; the plugin resolves the unique matching component otherwise.' },
+        component: { type: 'string', description: 'Optional owning component class path, e.g. "/Script/Engine.PointLightComponent". Omit to let the plugin resolve the unique matching owner (actor or component) from the allowlist.' },
       },
       required: ['actor_paths', 'property', 'value'],
       additionalProperties: false,

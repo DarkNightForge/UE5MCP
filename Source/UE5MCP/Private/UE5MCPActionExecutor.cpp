@@ -17,6 +17,7 @@
 #include "ISourceControlState.h"
 #include "SourceControlHelpers.h"
 #include "Subsystems/EditorActorSubsystem.h"
+#include "UObject/EnumProperty.h"
 #include "UObject/Package.h"
 #include "UObject/UnrealType.h"
 #include "UObject/UObjectIterator.h"
@@ -403,10 +404,51 @@ namespace
 		return Out;
 	}
 
+	/** Walk a dotted property path ("Struct.Member.Leaf") from a UObject. On success sets
+	 *  the leaf property + its value ptr AND the immediate container (struct + base ptr) so
+	 *  a sibling override flag can be written. Returns false + a refusal on any miss. */
+	bool ResolvePropertyPath(UObject* Owner, const FString& Path, FProperty*& OutLeaf, void*& OutLeafPtr,
+		UStruct*& OutContainerStruct, void*& OutContainerBase, FString& OutRefusal)
+	{
+		TArray<FString> Segments;
+		Path.ParseIntoArray(Segments, TEXT("."));
+		if (Segments.Num() == 0)
+		{
+			OutRefusal = TEXT("property_not_found");
+			return false;
+		}
+		UStruct* CurStruct = Owner->GetClass();
+		void* CurBase = static_cast<void*>(Owner);
+		// Intermediate segments must each be a struct we can descend into.
+		for (int32 Index = 0; Index < Segments.Num() - 1; ++Index)
+		{
+			const FStructProperty* StructProp = CastField<FStructProperty>(FindFProperty<FProperty>(CurStruct, FName(*Segments[Index])));
+			if (!StructProp)
+			{
+				OutRefusal = TEXT("property_not_found");
+				return false;
+			}
+			CurBase = StructProp->ContainerPtrToValuePtr<void>(CurBase);
+			CurStruct = StructProp->Struct;
+		}
+		FProperty* Leaf = FindFProperty<FProperty>(CurStruct, FName(*Segments.Last()));
+		if (!Leaf)
+		{
+			OutRefusal = TEXT("property_not_found");
+			return false;
+		}
+		OutLeaf = Leaf;
+		OutLeafPtr = Leaf->ContainerPtrToValuePtr<void>(CurBase);
+		OutContainerStruct = CurStruct;
+		OutContainerBase = CurBase;
+		return true;
+	}
+
 	/** Type-safe reflection write. Returns true if the value was written; on a type
 	 *  mismatch returns false and sets OutRefusal (the allowlist already vetted the
-	 *  declared type, but the executor never trusts the plan to match the live class). */
-	bool WritePropertyValue(const FProperty* Prop, void* ValuePtr, const FUE5MCPPropertyValue& Value, FString& OutRefusal)
+	 *  declared type, but the executor never trusts the plan to match the live class).
+	 *  ResolvedAsset is the pre-loaded, class-checked object for asset-ref writes. */
+	bool WritePropertyValue(const FProperty* Prop, void* ValuePtr, const FUE5MCPPropertyValue& Value, UObject* ResolvedAsset, FString& OutRefusal)
 	{
 		using EKind = FUE5MCPPropertyValue::EKind;
 		switch (Value.Kind)
@@ -434,8 +476,35 @@ namespace
 			}
 			break;
 		case EKind::Name:
+			// A JSON string targets an FName/FString, an enum (by value name), or an
+			// object/asset reference — disambiguated by the LIVE property type.
 			if (const FNameProperty* P = CastField<FNameProperty>(Prop)) { P->SetPropertyValue(ValuePtr, FName(*Value.Name)); return true; }
 			if (const FStrProperty* P = CastField<FStrProperty>(Prop)) { P->SetPropertyValue(ValuePtr, Value.Name); return true; }
+			if (const FEnumProperty* P = CastField<FEnumProperty>(Prop))
+			{
+				const UEnum* Enum = P->GetEnum();
+				const int64 EnumValue = Enum ? Enum->GetValueByNameString(Value.Name) : INDEX_NONE;
+				if (EnumValue == INDEX_NONE) { OutRefusal = TEXT("property_value_invalid_enum"); return false; }
+				P->GetUnderlyingProperty()->SetIntPropertyValue(ValuePtr, EnumValue);
+				return true;
+			}
+			if (const FNumericProperty* P = CastField<FNumericProperty>(Prop))
+			{
+				// Legacy TEnumAsByte: a numeric property backed by a UEnum.
+				if (const UEnum* Enum = P->GetIntPropertyEnum())
+				{
+					const int64 EnumValue = Enum->GetValueByNameString(Value.Name);
+					if (EnumValue == INDEX_NONE) { OutRefusal = TEXT("property_value_invalid_enum"); return false; }
+					P->SetIntPropertyValue(ValuePtr, EnumValue);
+					return true;
+				}
+			}
+			if (const FObjectPropertyBase* P = CastField<FObjectPropertyBase>(Prop))
+			{
+				if (!ResolvedAsset) { OutRefusal = TEXT("asset_not_resolved"); return false; }
+				P->SetObjectPropertyValue(ValuePtr, ResolvedAsset);
+				return true;
+			}
 			break;
 		default:
 			break;
@@ -487,7 +556,8 @@ FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteSetActorProperty(const FUE5MCP
 			(Type == TEXT("bool") && Kind == EKind::Bool) ||
 			(Type == TEXT("vector") && Kind == EKind::Vector) ||
 			(Type == TEXT("color") && Kind == EKind::Color) ||
-			(Type == TEXT("name") && Kind == EKind::Name);
+			// name / enum / asset all arrive as a JSON string; the live property type disambiguates.
+			((Type == TEXT("name") || Type == TEXT("enum") || Type == TEXT("asset")) && Kind == EKind::Name);
 		if (!bKindMatches)
 		{
 			continue;
@@ -528,8 +598,9 @@ FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteSetActorProperty(const FUE5MCP
 			continue;
 		}
 
-		// Resolve the owning object from the candidates: an actor the target IS, or a
-		// unique component of the candidate's class on the target.
+		// Resolve the matched (allowlist entry, owning object) for this target: an actor the
+		// target IS, or a unique component of the entry's class on the target.
+		const FUE5MCPPropertyAllowEntry* MatchedEntry = nullptr;
 		UObject* Owner = nullptr;
 		bool bAmbiguous = false;
 		for (const FUE5MCPPropertyAllowEntry& Entry : Candidates)
@@ -539,27 +610,23 @@ FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteSetActorProperty(const FUE5MCP
 			{
 				continue;
 			}
+			UObject* Candidate = nullptr;
 			if (OwnerClass->IsChildOf(AActor::StaticClass()))
 			{
-				if (Actor->IsA(OwnerClass))
-				{
-					if (Owner && Owner != Actor) { bAmbiguous = true; }
-					Owner = Actor;
-				}
+				if (Actor->IsA(OwnerClass)) { Candidate = Actor; }
 			}
 			else if (OwnerClass->IsChildOf(UActorComponent::StaticClass()))
 			{
 				TArray<UActorComponent*> Components;
 				Actor->GetComponents(OwnerClass, Components);
-				if (Components.Num() == 1)
-				{
-					if (Owner && Owner != Components[0]) { bAmbiguous = true; }
-					Owner = Components[0];
-				}
-				else if (Components.Num() > 1)
-				{
-					bAmbiguous = true;
-				}
+				if (Components.Num() == 1) { Candidate = Components[0]; }
+				else if (Components.Num() > 1) { bAmbiguous = true; }
+			}
+			if (Candidate)
+			{
+				if (Owner && Owner != Candidate) { bAmbiguous = true; }
+				Owner = Candidate;
+				MatchedEntry = &Entry;
 			}
 		}
 		if (bAmbiguous)
@@ -568,50 +635,91 @@ FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteSetActorProperty(const FUE5MCP
 			ChangeRows.Add(FString::Printf(TEXT("%s: ambiguous owner (more than one matching component)"), *Actor->GetActorLabel()));
 			continue;
 		}
-		if (!Owner)
+		if (!Owner || !MatchedEntry)
 		{
 			++ComponentMisses;
 			ChangeRows.Add(FString::Printf(TEXT("%s: no matching owner component/class found"), *Actor->GetActorLabel()));
 			continue;
 		}
 
-		FProperty* Prop = FindFProperty<FProperty>(Owner->GetClass(), PropName);
-		if (!Prop)
+		// Resolve the (possibly dotted) property path to its leaf + container struct.
+		FProperty* Leaf = nullptr;
+		void* LeafPtr = nullptr;
+		UStruct* ContainerStruct = nullptr;
+		void* ContainerBase = nullptr;
+		FString ResolveRefusal;
+		if (!ResolvePropertyPath(Owner, MatchedEntry->PropertyName.ToString(), Leaf, LeafPtr, ContainerStruct, ContainerBase, ResolveRefusal))
 		{
 			++ComponentMisses;
-			ChangeRows.Add(FString::Printf(TEXT("%s: property '%s' not found on %s"), *Actor->GetActorLabel(), *Action.PropertyName, *Owner->GetClass()->GetName()));
+			ChangeRows.Add(FString::Printf(TEXT("%s: %s for '%s' on %s"), *Actor->GetActorLabel(), *ResolveRefusal, *Action.PropertyName, *Owner->GetClass()->GetName()));
 			continue;
 		}
 
-		void* ValuePtr = Prop->ContainerPtrToValuePtr<void>(Owner);
-		const FString Before = PropertyValueToText(Prop, ValuePtr);
+		// Asset-ref: load + class-check up front. A hard miss is a malformed action → refuse it all.
+		UObject* ResolvedAsset = nullptr;
+		if (MatchedEntry->Type == TEXT("asset"))
+		{
+			ResolvedAsset = LoadObject<UObject>(nullptr, *Action.PropertyValue.Name);
+			if (!ResolvedAsset)
+			{
+				Result.RefusalCode = TEXT("asset_not_found");
+				Result.Message = FString::Printf(TEXT("Rejected set_actor_property: asset '%s' could not be loaded."), *Action.PropertyValue.Name);
+				return Result;
+			}
+			if (UClass* AllowedClass = ResolveClassByPath(MatchedEntry->AssetClass))
+			{
+				if (!ResolvedAsset->IsA(AllowedClass))
+				{
+					Result.RefusalCode = TEXT("asset_class_not_allowed");
+					Result.Message = FString::Printf(TEXT("Rejected set_actor_property: asset '%s' is not a %s."), *Action.PropertyValue.Name, *AllowedClass->GetName());
+					return Result;
+				}
+			}
+		}
+
+		const FString Before = PropertyValueToText(Leaf, LeafPtr);
 
 		Actor->Modify();
 		Owner->Modify();
-		Owner->PreEditChange(Prop);
+		Owner->PreEditChange(Leaf);
 		FString WriteRefusal;
-		if (!WritePropertyValue(Prop, ValuePtr, Action.PropertyValue, WriteRefusal))
+		if (!WritePropertyValue(Leaf, LeafPtr, Action.PropertyValue, ResolvedAsset, WriteRefusal))
 		{
-			// Type mismatch against the LIVE property (e.g. allowlist type drifted from the
-			// real class). Refuse the whole action — this is a malformed/misconfigured request.
+			// Mismatch/invalid against the LIVE property — a malformed/misconfigured request.
 			Result.RefusalCode = WriteRefusal;
-			Result.Message = FString::Printf(TEXT("Rejected set_actor_property: '%s' on %s is not a writable %s of the requested kind."),
-				*Action.PropertyName, *Owner->GetClass()->GetName(),
-				*Prop->GetClass()->GetName());
+			Result.Message = FString::Printf(TEXT("Rejected set_actor_property: '%s' on %s could not be written (%s)."),
+				*Action.PropertyName, *Owner->GetClass()->GetName(), *WriteRefusal);
 			return Result;
 		}
-		FPropertyChangedEvent ChangeEvent(Prop);
+
+		// Paired override flag (e.g. bOverride_BloomIntensity) lives in the leaf's container struct.
+		FString OverrideNote;
+		if (!MatchedEntry->OverrideFlag.IsEmpty())
+		{
+			const FBoolProperty* OverrideProp = CastField<FBoolProperty>(FindFProperty<FProperty>(ContainerStruct, FName(*MatchedEntry->OverrideFlag)));
+			if (!OverrideProp)
+			{
+				Result.RefusalCode = TEXT("override_flag_not_found");
+				Result.Message = FString::Printf(TEXT("Rejected set_actor_property: override flag '%s' is not a bool on %s."),
+					*MatchedEntry->OverrideFlag, *ContainerStruct->GetName());
+				return Result;
+			}
+			OverrideProp->SetPropertyValue(OverrideProp->ContainerPtrToValuePtr<void>(ContainerBase), true);
+			OverrideNote = FString::Printf(TEXT(" (+%s=true)"), *MatchedEntry->OverrideFlag);
+		}
+
+		FPropertyChangedEvent ChangeEvent(Leaf);
 		Owner->PostEditChangeProperty(ChangeEvent);
 
-		const FString After = PropertyValueToText(Prop, ValuePtr);
+		const FString After = PropertyValueToText(Leaf, LeafPtr);
 		Owner->MarkPackageDirty();
 		++ResolvedCount;
 		if (Before != After)
 		{
 			++ChangedCount;
 		}
-		ChangeRows.Add(FString::Printf(TEXT("%s [%s.%s]: %s -> %s"),
-			*Actor->GetActorLabel(), *Owner->GetClass()->GetName(), *Action.PropertyName, *Before, *After));
+		ChangeRows.Add(FString::Printf(TEXT("%s [%s.%s]: %s -> %s%s"),
+			*Actor->GetActorLabel(), *Owner->GetClass()->GetName(), *Action.PropertyName, *Before, *After, *OverrideNote));
 	}
 
 	Result.ChangedCount = ChangedCount;

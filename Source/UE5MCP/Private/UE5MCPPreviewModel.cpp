@@ -66,13 +66,32 @@ namespace
 		{
 			return FString();
 		}
-		const FProperty* Prop = FindFProperty<FProperty>(Owner->GetClass(), PropName);
-		if (!Prop)
+		// Walk the (possibly dotted) property path read-only to the leaf, mirroring the executor.
+		TArray<FString> Segments;
+		Action.PropertyName.ParseIntoArray(Segments, TEXT("."));
+		if (Segments.Num() == 0)
+		{
+			return FString();
+		}
+		const UStruct* CurStruct = Owner->GetClass();
+		const void* CurBase = static_cast<const void*>(Owner);
+		for (int32 Index = 0; Index < Segments.Num() - 1; ++Index)
+		{
+			const FStructProperty* StructProp = CastField<FStructProperty>(FindFProperty<FProperty>(CurStruct, FName(*Segments[Index])));
+			if (!StructProp)
+			{
+				return FString();
+			}
+			CurBase = StructProp->ContainerPtrToValuePtr<void>(CurBase);
+			CurStruct = StructProp->Struct;
+		}
+		const FProperty* Leaf = FindFProperty<FProperty>(CurStruct, FName(*Segments.Last()));
+		if (!Leaf)
 		{
 			return FString();
 		}
 		FString Out;
-		Prop->ExportTextItem_Direct(Out, Prop->ContainerPtrToValuePtr<void>(Owner), nullptr, nullptr, PPF_None);
+		Leaf->ExportTextItem_Direct(Out, Leaf->ContainerPtrToValuePtr<void>(CurBase), nullptr, nullptr, PPF_None);
 		return Out;
 	}
 }

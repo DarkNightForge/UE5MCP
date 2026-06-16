@@ -20,12 +20,14 @@ struct FUE5MCPPropertyAllowEntry
 	UPROPERTY(config, EditAnywhere, Category = "Property Policy")
 	FString ClassPath;
 
-	/** Reflected property name on that class (or inherited), e.g. "Intensity". */
+	/** Reflected property name on that class (or inherited), e.g. "Intensity". May be a
+	 *  dotted sub-path into struct members, e.g. "PostProcessSettings.BloomIntensity". */
 	UPROPERTY(config, EditAnywhere, Category = "Property Policy")
 	FName PropertyName;
 
-	/** Declared value type — one of: float, int, bool, vector, color, name. The
-	 *  validator/executor refuse a value whose JSON kind does not match this. */
+	/** Declared value type — one of: float, int, bool, vector, color, name, enum, asset.
+	 *  `enum` and `asset` both take a JSON string: an enum value name, or an asset path.
+	 *  The validator/executor refuse a value whose JSON kind does not match this. */
 	UPROPERTY(config, EditAnywhere, Category = "Property Policy")
 	FString Type;
 
@@ -38,6 +40,17 @@ struct FUE5MCPPropertyAllowEntry
 
 	UPROPERTY(config, EditAnywhere, Category = "Property Policy", meta = (EditCondition = "bHasRange"))
 	double Max = 0.0;
+
+	/** For Type `asset`: the assigned asset must be (IsA) this class path, e.g.
+	 *  "/Script/Engine.StaticMesh". Empty means any class (not recommended). */
+	UPROPERTY(config, EditAnywhere, Category = "Property Policy")
+	FString AssetClass;
+
+	/** Optional sibling bool, in the SAME struct as the (leaf) property, that the executor
+	 *  also sets true when this property is written — e.g. "bOverride_BloomIntensity" so an
+	 *  FPostProcessSettings member actually takes effect. Empty means none. */
+	UPROPERTY(config, EditAnywhere, Category = "Property Policy")
+	FString OverrideFlag;
 };
 
 /** Project settings for the UE5MCP tool host (Project Settings > Plugins > UE5MCP). */

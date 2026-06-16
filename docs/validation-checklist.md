@@ -4,7 +4,7 @@ Claims stay honest by mapping to checks. The plugin's behavior is verified by a 
 
 ## Automation suite (in-editor, headless)
 
-`Source/UE5MCP/Private/Tests/` carries a headless automation suite — **64 tests, no display required** — run with:
+`Source/UE5MCP/Private/Tests/` carries a headless automation suite — **65 tests, no display required** — run with:
 
 ```bash
 <UE-ROOT>/Engine/Binaries/<Platform>/UnrealEditor-Cmd <YOUR-PROJECT>/YourProject.uproject \
@@ -12,7 +12,7 @@ Claims stay honest by mapping to checks. The plugin's behavior is verified by a 
   -ReportExportPath=/tmp/ue5mcp_report
 ```
 
-It covers: the executor happy path with single-step undo/redo; every validator format rule; target-resolution round-trips; all tools (observe, find, read logs, package/source-control status, select, organize, label, tag add/remove, allowlisted property edit + non-allowlisted refusal, transform, duplicate, allowlisted spawn, destructive delete) including bounded queries; the full approval lifecycle (empty selection, stale selection, stale world, play-mode refusal that keeps the plan approvable, plan consumption, supersede-by-panel, external-approval gating); and the MCP/bridge boundary (read-only executes immediately, mutations pend/gate, the transport cannot execute, malformed/unknown requests refused with reasons, loopback-host classification). **Last full run: 62/62 passing on UE 5.7.4 (Linux source build) — verified in-editor, including `read_logs`, the label/tag executor + JSON tests, and `get_package_status` (`UE5MCP.Tools.PackageStatusReportsDirtyAndSourceControl`, `UE5MCP.Json.ParsesPackageStatus`).**
+It covers: the executor happy path with single-step undo/redo; every validator format rule; target-resolution round-trips; all tools (observe, find, read logs, package/source-control status, select, organize, label, tag add/remove, allowlisted property edit + non-allowlisted refusal + enum/struct-member-path/asset value kinds, transform, duplicate, allowlisted spawn, destructive delete) including bounded queries; the full approval lifecycle (empty selection, stale selection, stale world, play-mode refusal that keeps the plan approvable, plan consumption, supersede-by-panel, external-approval gating); and the MCP/bridge boundary (read-only executes immediately, mutations pend/gate, the transport cannot execute, malformed/unknown requests refused with reasons, loopback-host classification). **Last full run: 65/65 passing on UE 5.7.4 (Linux source build) — verified in-editor, including `set_actor_property`'s enum/struct-member+override/asset value kinds (`UE5MCP.Executor.SetPropertyEnumStructAssetKinds`), `get_package_status`, and the label/tag/read_logs tests.**
 
 ## Repository scripts (the typed-plan contract)
 
