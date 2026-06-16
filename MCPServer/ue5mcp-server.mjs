@@ -120,7 +120,8 @@ const TOOLS = [
       type: 'object',
       properties: {
         actor_paths: ACTOR_PATHS_SCHEMA,
-        component: { type: 'string', description: 'Optional owning component class path to inspect instead of the actor, e.g. "/Script/Engine.PointLightComponent". Refused if the actor has zero or more than one of that class.' },
+        component: { type: 'string', description: 'Optional owning component class path to inspect instead of the actor, e.g. "/Script/Engine.PointLightComponent". Refused (ambiguous_component) if the actor has more than one of that class — pass component_name to pick one.' },
+        component_name: { type: 'string', description: 'Optional component instance NAME (as reported by get_actor_components) to inspect one specific component when several share a class. Resolves the ambiguous_component case.' },
         editable_only: { type: 'boolean', description: 'When true (default) list only editor-editable properties.' },
         allowlisted_only: { type: 'boolean', description: 'When true (default) list only properties on the plugin PropertyAllowlist — exactly the set_actor_property-writable surface.' },
         max_properties: { type: 'number', description: 'Max properties to return (default 50, max 500).' },
@@ -260,6 +261,7 @@ const TOOLS = [
           type: ['number', 'boolean', 'string', 'array'],
         },
         component: { type: 'string', description: 'Optional owning component class path, e.g. "/Script/Engine.PointLightComponent". Omit to let the plugin resolve the unique matching owner (actor or component) from the allowlist.' },
+        component_name: { type: 'string', description: 'Optional component instance NAME (as reported by get_actor_components) to target one specific component when an actor has several of the same class. Instance selector only — it never widens policy; the class is still allowlist-gated. Use it to resolve an "ambiguous owner" refusal.' },
       },
       required: ['actor_paths', 'property', 'value'],
       additionalProperties: false,
@@ -603,7 +605,7 @@ const HANDLERS = {
 
   async get_actor_properties(args) {
     const params = {};
-    for (const key of ['component', 'editable_only', 'allowlisted_only', 'max_properties']) {
+    for (const key of ['component', 'component_name', 'editable_only', 'allowlisted_only', 'max_properties']) {
       if (args[key] !== undefined) params[key] = args[key];
     }
     return runReadOnlyPlan('List reflected properties of an actor.',
@@ -669,6 +671,7 @@ const HANDLERS = {
   async set_actor_property(args) {
     const params = { property: args.property, value: args.value };
     if (args.component !== undefined) params.component = args.component;
+    if (args.component_name !== undefined) params.component_name = args.component_name;
     return runMutatingPlan(`Set property '${args.property}' on ${args.actor_paths.length} actor(s).`,
       [makeAction('set_actor_property', 'low_risk', args.actor_paths, params)]);
   },

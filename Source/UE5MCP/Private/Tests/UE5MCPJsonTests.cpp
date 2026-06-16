@@ -245,6 +245,37 @@ bool FUE5MCPJsonParseGetPropertiesTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPJsonParseComponentNameTest,
+	"UE5MCP.Json.ParsesComponentName", UE5MCPTests::KernelTestFlags)
+bool FUE5MCPJsonParseComponentNameTest::RunTest(const FString& Parameters)
+{
+	const FString Body = TEXT(R"json({
+		"schema_version": 1,
+		"summary": "Component-by-name",
+		"requires_approval": true,
+		"context_fingerprint": { "scene": "DemoScene", "selected_object_paths": ["PersistentLevel.Rig_1"] },
+		"actions": [
+			{ "id": "w", "tool": "set_actor_property", "risk": "low_risk", "targets": ["PersistentLevel.Rig_1"],
+			  "params": { "component": "/Script/Engine.PointLightComponent", "component_name": "LightB", "property": "Intensity", "value": 5000.0 } },
+			{ "id": "r", "tool": "get_actor_properties", "risk": "read_only", "targets": ["PersistentLevel.Rig_1"],
+			  "params": { "component_name": "LightB" } }
+		]
+	})json");
+
+	FUE5MCPPlanRequest Request;
+	TArray<FString> Errors;
+	TestTrue(TEXT("Envelope parses"), UE5MCPJson::ParsePlanRequest(Body, Request, Errors));
+	TestEqual(TEXT("No parse errors"), Errors.Num(), 0);
+	TestEqual(TEXT("two actions"), Request.Actions.Num(), 2);
+	if (Request.Actions.Num() == 2)
+	{
+		TestEqual(TEXT("set component_name parsed"), Request.Actions[0].PropertyComponentName, FString(TEXT("LightB")));
+		TestEqual(TEXT("get component_name parsed"), Request.Actions[1].PropertyComponentName, FString(TEXT("LightB")));
+	}
+
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPJsonParseGetComponentsTest,
 	"UE5MCP.Json.ParsesGetActorComponentsQuery", UE5MCPTests::KernelTestFlags)
 bool FUE5MCPJsonParseGetComponentsTest::RunTest(const FString& Parameters)

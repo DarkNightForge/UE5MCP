@@ -538,6 +538,26 @@ class GetActorPropertiesTests(unittest.TestCase):
         del plan["actions"][0]["params"]["component"]
         self.assertEqual(validate_plan(plan), [])
 
+    def test_component_name_is_accepted(self):
+        plan = self.plan()
+        plan["actions"][0]["params"]["component_name"] = "LightB"
+        self.assertEqual(validate_plan(plan), [])
+
+
+class SetActorPropertyParamsTests(unittest.TestCase):
+    def plan(self):
+        return load_example("set-actor-property.json")
+
+    def test_component_name_is_accepted(self):
+        plan = self.plan()
+        plan["actions"][0]["params"]["component_name"] = "LightB"
+        self.assertEqual(validate_plan(plan), [])
+
+    def test_unknown_param_still_rejected(self):
+        plan = self.plan()
+        plan["actions"][0]["params"]["bogus"] = "x"
+        self.assertIn("R9", rules(validate_plan(plan)))
+
 
 class GetActorComponentsTests(unittest.TestCase):
     def plan(self):

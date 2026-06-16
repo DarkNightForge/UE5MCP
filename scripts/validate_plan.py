@@ -108,6 +108,7 @@ REGISTRY = {
         "risk": READ_ONLY,
         "params": {
             "component": str,
+            "component_name": str,
             "editable_only": bool,
             "allowlisted_only": bool,
             "max_properties": int,
@@ -155,7 +156,7 @@ REGISTRY = {
         "risk": LOW_RISK,
         # property allowlist (R12: class/property/type/range) is project config and is
         # enforced RUNTIME-ONLY by the C++ validator + executor — not mirrored here.
-        "params": {"property": str, "value": "propvalue", "component": str},
+        "params": {"property": str, "value": "propvalue", "component": str, "component_name": str},
         "requires_targets": True,
         "accepts_targets": True,
     },

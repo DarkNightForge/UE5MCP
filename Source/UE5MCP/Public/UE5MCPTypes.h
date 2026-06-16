@@ -225,6 +225,10 @@ struct FUE5MCPAction
 	 *  (empty = the actor itself), and the typed value. */
 	FString PropertyName;
 	FString PropertyComponentClass;
+	/** Optional component instance NAME (as reported by get_actor_components) to target
+	 *  one specific component among several of the same class. Instance selector only —
+	 *  it never widens policy; the class is still allowlist-gated. */
+	FString PropertyComponentName;
 	FUE5MCPPropertyValue PropertyValue;
 	FUE5MCPFindActorsQuery FindQuery;
 	FUE5MCPReadLogsQuery ReadLogsQuery;
@@ -355,6 +359,7 @@ struct FUE5MCPActionRequest
 	TArray<FName> Tags;
 	FString PropertyName;
 	FString PropertyComponentClass;
+	FString PropertyComponentName;
 	FUE5MCPPropertyValue PropertyValue;
 	FUE5MCPFindActorsQuery FindQuery;
 	FUE5MCPReadLogsQuery ReadLogsQuery;

@@ -363,6 +363,10 @@ bool UE5MCPJson::ParsePlanRequest(const FString& Body, FUE5MCPPlanRequest& OutRe
 				{
 					ActionRequest.PropertyComponentClass = StringValue.TrimStartAndEnd();
 				}
+				else if (Key == TEXT("component_name") && Value->TryGetString(StringValue))
+				{
+					ActionRequest.PropertyComponentName = StringValue.TrimStartAndEnd();
+				}
 				else if (Key == TEXT("value"))
 				{
 					// Polymorphic, tagged by JSON kind. The validator checks this kind

@@ -483,4 +483,68 @@ bool FUE5MCPGetActorComponentsTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPGetActorPropertiesByNameTest,
+	"UE5MCP.Tools.GetActorPropertiesByComponentName", UE5MCPTests::KernelTestFlags)
+bool FUE5MCPGetActorPropertiesByNameTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+	if (!TestNotNull(TEXT("CreateNewMap returned a world"), World))
+	{
+		return false;
+	}
+
+	AActor* Actor = World->SpawnActor<AActor>();
+	if (!TestNotNull(TEXT("Spawned a bare actor"), Actor))
+	{
+		return false;
+	}
+	USceneComponent* Root = NewObject<USceneComponent>(Actor, TEXT("Root"), RF_Transactional);
+	Actor->SetRootComponent(Root);
+	Root->RegisterComponent();
+	Actor->AddInstanceComponent(Root);
+	for (const TCHAR* Name : { TEXT("LightA"), TEXT("LightB") })
+	{
+		UPointLightComponent* Comp = NewObject<UPointLightComponent>(Actor, Name, RF_Transactional);
+		Comp->RegisterComponent();
+		Actor->AddInstanceComponent(Comp);
+	}
+
+	auto BuildGet = [Actor](const TCHAR* ComponentName)
+	{
+		FUE5MCPResolvedAction Resolved;
+		Resolved.Action.Id = TEXT("test-get-by-name");
+		Resolved.Action.Type = EUE5MCPActionType::GetActorProperties;
+		Resolved.Action.Risk = EUE5MCPRiskLevel::ReadOnly;
+		Resolved.Action.PropertyComponentName = ComponentName;
+		Resolved.Action.GetPropertiesQuery.bAllowlistedOnly = true;
+		Resolved.Action.TargetActors.Add(Actor);
+		return UE5MCPTests::WrapPlanForTest(Resolved);
+	};
+
+	// --- By name: resolves the one component, lists its allowlisted properties ---
+	const FUE5MCPExecutionResult Named =
+		FUE5MCPActionExecutor::ExecuteApprovedPlan(BuildGet(TEXT("LightB")));
+	TestTrue(TEXT("get_actor_properties by component_name succeeded"), Named.bSuccess);
+	if (Named.ActionResults.Num() == 1)
+	{
+		const FUE5MCPActionResult& Action = Named.ActionResults[0];
+		TestTrue(TEXT("Inspected owner is a point light component"),
+			Action.InspectedOwnerClass.Contains(TEXT("PointLightComponent")));
+		TestTrue(TEXT("Intensity listed on the named component"),
+			Action.Properties.ContainsByPredicate([](const FUE5MCPPropertySummary& P) { return P.Name == TEXT("Intensity"); }));
+	}
+
+	// --- A name that matches nothing is a clean refusal ---
+	const FUE5MCPExecutionResult Missing =
+		FUE5MCPActionExecutor::ExecuteApprovedPlan(BuildGet(TEXT("DoesNotExist")));
+	TestFalse(TEXT("Unknown component_name refused"), Missing.bSuccess);
+	if (Missing.ActionResults.Num() == 1)
+	{
+		TestEqual(TEXT("Refusal code is component_not_found"),
+			Missing.ActionResults[0].RefusalCode, FString(TEXT("component_not_found")));
+	}
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

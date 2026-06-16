@@ -59,7 +59,15 @@ namespace
 			{
 				TArray<UActorComponent*> Components;
 				const_cast<AActor*>(Actor)->GetComponents(OwnerClass, Components);
-				if (Components.Num() == 1) { Owner = Components[0]; break; }
+				if (!Action.PropertyComponentName.IsEmpty())
+				{
+					for (UActorComponent* Component : Components)
+					{
+						if (Component->GetName() == Action.PropertyComponentName) { Owner = Component; break; }
+					}
+					if (Owner) { break; }
+				}
+				else if (Components.Num() == 1) { Owner = Components[0]; break; }
 			}
 		}
 		if (!Owner)
@@ -155,9 +163,10 @@ FString FUE5MCPPreviewModel::BuildPreviewText(const FUE5MCPResolvedAction& Resol
 	case EUE5MCPActionType::SetActorProperty:
 	{
 		const FString ValueText = FormatPropertyValue(Action.PropertyValue);
-		FString Text = FString::Printf(TEXT("set_actor_property: set '%s'%s = %s on %d actor(s)"),
+		FString Text = FString::Printf(TEXT("set_actor_property: set '%s'%s%s = %s on %d actor(s)"),
 			*Action.PropertyName,
 			Action.PropertyComponentClass.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" on '%s'"), *Action.PropertyComponentClass),
+			Action.PropertyComponentName.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" [component '%s']"), *Action.PropertyComponentName),
 			*ValueText, Action.TargetActors.Num());
 		for (const TWeakObjectPtr<AActor>& ActorPtr : Action.TargetActors)
 		{

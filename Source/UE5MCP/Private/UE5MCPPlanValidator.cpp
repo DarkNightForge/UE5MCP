@@ -248,6 +248,7 @@ FUE5MCPPlanValidationResult FUE5MCPPlanValidator::ValidateAndResolve(const FUE5M
 		Resolved.Action.Tags = ActionRequest.Tags;
 		Resolved.Action.PropertyName = ActionRequest.PropertyName;
 		Resolved.Action.PropertyComponentClass = ActionRequest.PropertyComponentClass;
+		Resolved.Action.PropertyComponentName = ActionRequest.PropertyComponentName;
 		Resolved.Action.PropertyValue = ActionRequest.PropertyValue;
 		Resolved.Action.FindQuery = ActionRequest.FindQuery;
 		Resolved.Action.ReadLogsQuery = ActionRequest.ReadLogsQuery;

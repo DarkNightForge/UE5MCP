@@ -627,7 +627,17 @@ FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteSetActorProperty(const FUE5MCP
 			{
 				TArray<UActorComponent*> Components;
 				Actor->GetComponents(OwnerClass, Components);
-				if (Components.Num() == 1) { Candidate = Components[0]; }
+				if (!Action.PropertyComponentName.IsEmpty())
+				{
+					// Instance selector: pick the named component of this allowlisted
+					// class. The name disambiguates WHICH instance; it never widens
+					// policy — the class is still allowlist-gated above.
+					for (UActorComponent* Component : Components)
+					{
+						if (Component->GetName() == Action.PropertyComponentName) { Candidate = Component; break; }
+					}
+				}
+				else if (Components.Num() == 1) { Candidate = Components[0]; }
 				else if (Components.Num() > 1) { bAmbiguous = true; }
 			}
 			if (Candidate)
@@ -646,7 +656,9 @@ FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteSetActorProperty(const FUE5MCP
 		if (!Owner || !MatchedEntry)
 		{
 			++ComponentMisses;
-			ChangeRows.Add(FString::Printf(TEXT("%s: no matching owner component/class found"), *Actor->GetActorLabel()));
+			ChangeRows.Add(Action.PropertyComponentName.IsEmpty()
+				? FString::Printf(TEXT("%s: no matching owner component/class found"), *Actor->GetActorLabel())
+				: FString::Printf(TEXT("%s: no allowlisted component named '%s' found"), *Actor->GetActorLabel(), *Action.PropertyComponentName));
 			continue;
 		}
 
@@ -1289,10 +1301,34 @@ FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteGetActorProperties(const FUE5M
 		return Result;
 	}
 
-	// Resolve the owner: the actor itself, or a UNIQUELY resolved component of the
-	// optional `component` class on it (mirrors the set_actor_property owner model).
+	// Resolve the owner: the actor itself, a component named via `component_name`
+	// (instance selector — the escape hatch from ambiguous_component), or a UNIQUELY
+	// resolved component of the `component` class (mirrors the set_actor_property model).
 	UObject* Owner = Actor;
-	if (!Action.PropertyComponentClass.IsEmpty())
+	if (!Action.PropertyComponentName.IsEmpty())
+	{
+		UClass* CompClass = Action.PropertyComponentClass.IsEmpty() ? nullptr : ResolveClassByPath(Action.PropertyComponentClass);
+		TArray<UActorComponent*> AllComponents;
+		Actor->GetComponents(AllComponents);
+		UActorComponent* Named = nullptr;
+		for (UActorComponent* Component : AllComponents)
+		{
+			if (!IsValid(Component) || Component->GetName() != Action.PropertyComponentName) { continue; }
+			if (CompClass && !Component->IsA(CompClass)) { continue; }
+			Named = Component;
+			break;
+		}
+		if (!Named)
+		{
+			Result.RefusalCode = TEXT("component_not_found");
+			Result.Message = FString::Printf(TEXT("Rejected get_actor_properties: actor '%s' has no component named '%s'%s."),
+				*Actor->GetActorLabel(), *Action.PropertyComponentName,
+				Action.PropertyComponentClass.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" of class '%s'"), *Action.PropertyComponentClass));
+			return Result;
+		}
+		Owner = Named;
+	}
+	else if (!Action.PropertyComponentClass.IsEmpty())
 	{
 		UClass* CompClass = ResolveClassByPath(Action.PropertyComponentClass);
 		if (!CompClass || !CompClass->IsChildOf(UActorComponent::StaticClass()))
@@ -1312,7 +1348,7 @@ FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteGetActorProperties(const FUE5M
 		if (Components.Num() > 1)
 		{
 			Result.RefusalCode = TEXT("ambiguous_component");
-			Result.Message = FString::Printf(TEXT("Rejected get_actor_properties: actor '%s' has %d '%s' components; the read tool cannot pick one."), *Actor->GetActorLabel(), Components.Num(), *Action.PropertyComponentClass);
+			Result.Message = FString::Printf(TEXT("Rejected get_actor_properties: actor '%s' has %d '%s' components; pass 'component_name' to pick one (see get_actor_components)."), *Actor->GetActorLabel(), Components.Num(), *Action.PropertyComponentClass);
 			return Result;
 		}
 		Owner = Components[0];

@@ -404,6 +404,74 @@ bool FUE5MCPExecutorSetPropertyExtendedKindsTest::RunTest(const FString& Paramet
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPExecutorSetPropertyByComponentNameTest,
+	"UE5MCP.Executor.SetPropertyByComponentNameDisambiguates", UE5MCPTests::KernelTestFlags)
+bool FUE5MCPExecutorSetPropertyByComponentNameTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+	if (!TestNotNull(TEXT("CreateNewMap returned a world"), World))
+	{
+		return false;
+	}
+
+	// An actor with TWO allowlisted-class components of the same class — the case
+	// that set_actor_property refuses as 'ambiguous owner' without a name.
+	AActor* Actor = World->SpawnActor<AActor>();
+	if (!TestNotNull(TEXT("Spawned a bare actor"), Actor))
+	{
+		return false;
+	}
+	USceneComponent* Root = NewObject<USceneComponent>(Actor, TEXT("Root"), RF_Transactional);
+	Actor->SetRootComponent(Root);
+	Root->RegisterComponent();
+	Actor->AddInstanceComponent(Root);
+	UPointLightComponent* LightA = NewObject<UPointLightComponent>(Actor, TEXT("LightA"), RF_Transactional);
+	LightA->RegisterComponent();
+	Actor->AddInstanceComponent(LightA);
+	UPointLightComponent* LightB = NewObject<UPointLightComponent>(Actor, TEXT("LightB"), RF_Transactional);
+	LightB->RegisterComponent();
+	Actor->AddInstanceComponent(LightB);
+
+	const float AStart = LightA->Intensity;
+	const float BStart = LightB->Intensity;
+	const float NewIntensity = BStart + 777.0f;
+
+	auto BuildSetIntensity = [Actor, NewIntensity](const TCHAR* ComponentName)
+	{
+		FUE5MCPResolvedAction Resolved;
+		Resolved.Action.Id = TEXT("test-set-by-name");
+		Resolved.Action.Type = EUE5MCPActionType::SetActorProperty;
+		Resolved.Action.Risk = EUE5MCPRiskLevel::LowMutation;
+		Resolved.Action.PropertyName = TEXT("Intensity");
+		Resolved.Action.PropertyComponentClass = TEXT("/Script/Engine.PointLightComponent");
+		Resolved.Action.PropertyComponentName = ComponentName;
+		Resolved.Action.PropertyValue.Kind = FUE5MCPPropertyValue::EKind::Number;
+		Resolved.Action.PropertyValue.Number = NewIntensity;
+		Resolved.Action.TargetActors.Add(Actor);
+		return UE5MCPTests::WrapPlanForTest(Resolved);
+	};
+
+	// --- Without a name: ambiguous, nothing written ---
+	const FUE5MCPExecutionResult Ambiguous =
+		FUE5MCPActionExecutor::ExecuteApprovedPlan(BuildSetIntensity(TEXT("")));
+	TestFalse(TEXT("Ambiguous (no component_name) does not succeed"), Ambiguous.bSuccess);
+	TestTrue(TEXT("Neither component changed under ambiguity"),
+		FMath::IsNearlyEqual(LightA->Intensity, AStart, 0.01f) && FMath::IsNearlyEqual(LightB->Intensity, BStart, 0.01f));
+
+	// --- By name: only the named component is written ---
+	const FUE5MCPExecutionResult Named =
+		FUE5MCPActionExecutor::ExecuteApprovedPlan(BuildSetIntensity(TEXT("LightB")));
+	TestTrue(TEXT("Named write succeeded"), Named.bSuccess);
+	TestTrue(TEXT("LightB updated to the new value"), FMath::IsNearlyEqual(LightB->Intensity, NewIntensity, 0.01f));
+	TestTrue(TEXT("LightA left unchanged"), FMath::IsNearlyEqual(LightA->Intensity, AStart, 0.01f));
+
+	// --- One undo reverts only LightB ---
+	TestTrue(TEXT("UndoTransaction performed an undo"), GEditor->UndoTransaction());
+	TestTrue(TEXT("Undo restored LightB"), FMath::IsNearlyEqual(LightB->Intensity, BStart, 0.01f));
+
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPExecutorRejectsUnvalidatedPlanTest,
 	"UE5MCP.Executor.RejectsUnvalidatedPlan", UE5MCPTests::KernelTestFlags)
 bool FUE5MCPExecutorRejectsUnvalidatedPlanTest::RunTest(const FString& Parameters)
