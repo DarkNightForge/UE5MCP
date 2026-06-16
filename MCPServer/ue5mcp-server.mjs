@@ -11,7 +11,7 @@
 //
 // APPROVAL MODEL (mirrors the plugin's risk tiers via tool naming):
 //   read_only   tools (get_selection, find_actors, read_logs,
-//               get_package_status, preview_actions)
+//               get_package_status, get_actor_properties, preview_actions)
 //               → safe to allowlist; never mutate.
 //   low_risk    tools (select_actors, set_actor_folder, set_actor_label,
 //               add_actor_tags, remove_actor_tags, set_actor_property,
@@ -110,6 +110,24 @@ const TOOLS = [
       additionalProperties: false,
     },
     annotations: { title: 'Get package / source-control status', readOnlyHint: true },
+  },
+  {
+    name: 'get_actor_properties',
+    risk: 'read_only',
+    description: 'List the reflected properties of an actor (or one of its components) with current values — read-only, capped. By default returns exactly the ALLOWLISTED, editable properties, i.e. precisely what set_actor_property will accept, so you never have to guess a property name and learn from a refusal. Each row reports name, cpp_type, current_value, editable, differs_from_default, allowlisted, the allowlisted type + range (if any), and the engine\'s own suggested ClampMin/ClampMax range (advisory). Inspects the first target actor; pass a component class to inspect a uniquely-resolved component instead.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        actor_paths: ACTOR_PATHS_SCHEMA,
+        component: { type: 'string', description: 'Optional owning component class path to inspect instead of the actor, e.g. "/Script/Engine.PointLightComponent". Refused if the actor has zero or more than one of that class.' },
+        editable_only: { type: 'boolean', description: 'When true (default) list only editor-editable properties.' },
+        allowlisted_only: { type: 'boolean', description: 'When true (default) list only properties on the plugin PropertyAllowlist — exactly the set_actor_property-writable surface.' },
+        max_properties: { type: 'number', description: 'Max properties to return (default 50, max 500).' },
+      },
+      required: ['actor_paths'],
+      additionalProperties: false,
+    },
+    annotations: { title: 'Get actor properties', readOnlyHint: true },
   },
   {
     name: 'preview_actions',
@@ -385,6 +403,7 @@ const PLUGIN_TOOL_RISK = {
   find_actors: 'read_only',
   read_logs: 'read_only',
   get_package_status: 'read_only',
+  get_actor_properties: 'read_only',
   select_actors: 'low_risk',
   set_actor_folder: 'low_risk',
   set_actor_label: 'low_risk',
@@ -563,6 +582,15 @@ const HANDLERS = {
     }
     return runReadOnlyPlan('Report dirty packages and source-control status.',
       makeAction('get_package_status', 'read_only', [], params));
+  },
+
+  async get_actor_properties(args) {
+    const params = {};
+    for (const key of ['component', 'editable_only', 'allowlisted_only', 'max_properties']) {
+      if (args[key] !== undefined) params[key] = args[key];
+    }
+    return runReadOnlyPlan('List reflected properties of an actor.',
+      makeAction('get_actor_properties', 'read_only', args.actor_paths, params));
   },
 
   async preview_actions(args) {

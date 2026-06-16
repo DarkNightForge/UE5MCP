@@ -1,7 +1,7 @@
 # UE5MCP capability map
 
 Status: living product/planning document  
-Last updated: 2026-06-15 (added `set_actor_property` reflection value-kind expansion — enum/asset/struct-member/override; suite verified 65/65 in-editor)  
+Last updated: 2026-06-16 (added read-only `get_actor_properties` discovery tool — lists the allowlisted-editable property surface with current values; suite verified 67/67 in-editor)  
 Source of truth for current tools: `Source/UE5MCP/Private/UE5MCPToolRegistry.cpp`, `docs/specs/action-plan-format.md`, `docs/specs/preview-approval-flow.md`, and `docs/validation-checklist.md`.
 
 This document tracks **breadth**: which parts of Unreal Engine development UE5MCP can currently observe, preview, mutate, refuse, and verify.
@@ -48,6 +48,7 @@ Registry tools in v1:
 | `find_actors` | read-only | Actor discovery | Finds loaded editor-world actors by class, label, tag, folder, selected-only, capped results. |
 | `read_logs` | read-only | Logs / diagnostics | Returns recent `LogUE5MCP` lines (tool calls, refusals, errors); capped (default 100, max 512), oldest→newest, optional substring filter. |
 | `get_package_status` | read-only | Source control / packages | Reports the dirty package set (blast radius of a save) + source-control summary (provider, enabled/available) + per-package cached SC state; capped (default 100, max 500); cache-only, no SC network call. |
+| `get_actor_properties` | read-only | Components / allowlisted properties | Lists the reflected properties of the first target actor (or a uniquely-resolved `component` class on it) with current values; per row: `cpp_type`, `current_value`, `editable`, `differs_from_default`, `allowlisted`, allowlisted type/range, advisory `ClampMin/ClampMax`. Defaults to exactly the `set_actor_property`-writable surface — discovery without trial-and-error. Capped (default 50, max 500); the first read-only tool that requires targets; refuses `ambiguous_component`/`property_owner_not_found`. |
 | MCP `preview_actions` | read-only | UX / preview | Validates and resolves typed action plans without executing. |
 | `select_actors` | low mutation | Selection | Sets editor selection to explicit actor targets. |
 | `set_actor_folder` | low mutation | World Outliner organization | Moves target actors into a named folder. |
@@ -62,8 +63,8 @@ Registry tools in v1:
 
 Current verification snapshot:
 
-- Public repo Python checks: `102 passed` in the last local verification run.
-- UE automation suite is now **65/65 passing**, verified in a headless in-editor run on UE 5.7.4 (Linux source build) — including the `read_logs`, label/tag, `get_package_status`, and `set_actor_property` (scalar + enum/struct-member/asset value-kind) tests.
+- Public repo Python checks: `108 passed` in the last local verification run.
+- UE automation suite is now **67/67 passing**, verified in a headless in-editor run on UE 5.7.4 (Linux source build) — including the `read_logs`, label/tag, `get_package_status`, `get_actor_properties` (read-only discovery + `ambiguous_component` refusal), and `set_actor_property` (scalar + enum/struct-member/asset value-kind) tests.
 - Windows and Epic Games Launcher binary builds are not yet verified.
 - Full tool breadth is still actor/world-editor focused; most asset/Blueprint/team-pipeline workflows are not shipped.
 
@@ -143,11 +144,11 @@ Current verification snapshot:
 
 | Field | Current state |
 | --- | --- |
-| Status | `partial` — allowlisted scalar/bool/vector/color/name/enum/asset + struct-member edits shipped |
-| Current support | `set_actor_property` writes a `(class, property, type)` tuple from `PropertyAllowlist` on the target actor or one of its components, resolved via reflection. Value kinds: float/int/bool/vector/color/name, **enum** (by value-name), **asset** (by path, constrained to the entry's `AssetClass`). `property` may be a dotted **struct-member sub-path** (e.g. `PostProcessSettings.BloomIntensity`), and an entry may set a paired **override flag** (e.g. `bOverride_BloomIntensity`). Optional numeric range, before→after preview, one undoable transaction, and machine-readable refusals (`property_not_allowlisted` — returning the allowed set — `property_type_mismatch`, `property_value_out_of_range`, `property_value_invalid_enum`, `asset_not_found`/`asset_class_not_allowed`, `property_not_found`, `ambiguous_component`, `override_flag_not_found`). Enforced in the validator (R12) AND re-checked in the executor. |
-| Missing | Read-only property/component enumeration tool (`get_actor_properties`), component addressing by instance name, array/map/set container elements, deeper-than-one struct nesting verification, wider default allowlist. |
-| Next useful slice | A read-only `get_actor_properties` listing the allowlisted-editable properties + current values per target (discovery without trial-and-error). |
-| Proof needed | No arbitrary property write — verified by `UE5MCP.Executor.SetAllowlistedPropertyUndoAndRefusesNonAllowlisted` (allowlisted write + undo/redo; non-allowlisted refused), `UE5MCP.Executor.SetPropertyEnumStructAssetKinds` (enum/struct-member+override/asset writes + undo + invalid-enum/wrong-class refusals), and `UE5MCP.Json.ParsesSetPropertyValueKinds`. |
+| Status | `partial` — allowlisted scalar/bool/vector/color/name/enum/asset + struct-member edits shipped; read-only `get_actor_properties` discovery shipped |
+| Current support | `set_actor_property` writes a `(class, property, type)` tuple from `PropertyAllowlist` on the target actor or one of its components, resolved via reflection. Value kinds: float/int/bool/vector/color/name, **enum** (by value-name), **asset** (by path, constrained to the entry's `AssetClass`). `property` may be a dotted **struct-member sub-path** (e.g. `PostProcessSettings.BloomIntensity`), and an entry may set a paired **override flag** (e.g. `bOverride_BloomIntensity`). Optional numeric range, before→after preview, one undoable transaction, and machine-readable refusals (`property_not_allowlisted` — returning the allowed set — `property_type_mismatch`, `property_value_out_of_range`, `property_value_invalid_enum`, `asset_not_found`/`asset_class_not_allowed`, `property_not_found`, `ambiguous_component`, `override_flag_not_found`). Enforced in the validator (R12) AND re-checked in the executor. **Read side:** `get_actor_properties` enumerates the first target's (or a uniquely-resolved component's) reflected properties via `TFieldIterator`, reporting per property `cpp_type`, `current_value`, `editable`, `differs_from_default` (archetype compare), `allowlisted` + allowed type/range, and advisory `ClampMin/ClampMax` — defaulting to exactly the writable surface. |
+| Missing | Read-only **component** enumeration tool (`get_actor_components`), component addressing by instance name (kills the `ambiguous_component` skip for multi-component actors), array/map/set container elements, deeper-than-one struct nesting verification, wider default allowlist. |
+| Next useful slice | `get_actor_components` (list a target's components: class/name/creation-method/attach-parent/tags) so an agent can name the component to address, then component-by-name addressing on `set_actor_property`/`get_actor_properties`. |
+| Proof needed | No arbitrary property write — verified by `UE5MCP.Executor.SetAllowlistedPropertyUndoAndRefusesNonAllowlisted` (allowlisted write + undo/redo; non-allowlisted refused), `UE5MCP.Executor.SetPropertyEnumStructAssetKinds` (enum/struct-member+override/asset writes + undo + invalid-enum/wrong-class refusals), `UE5MCP.Json.ParsesSetPropertyValueKinds`, and read-side discovery by `UE5MCP.Tools.GetActorPropertiesListsAllowlistedWithValues` (allowlisted listing + values + `ambiguous_component` refusal) and `UE5MCP.Json.ParsesGetActorPropertiesQuery`. |
 
 ### 9. Blueprint workflows
 
@@ -216,7 +217,7 @@ Current verification snapshot:
 | Status | `partial` — spawn/transform + allowlisted light Intensity/LightColor/IntensityUnits, camera post-process struct members |
 | Current support | Can spawn allowlisted `PointLight` and `CameraActor` and transform actors. `set_actor_property` now covers all three value-kinds this area needed: light `Intensity` (float, ranged) and `LightColor` (rgba); `IntensityUnits` (**enum** by value-name); and camera `PostProcessSettings.BloomIntensity` (**struct-member sub-path** with its paired `bOverride_` flag) — all previewed + undoable. The machinery to reach the rest of the lens/filmback/focus/FPostProcessSettings surface (struct paths + enum + asset-ref + override pairing) is shipped. |
 | Missing | Just allowlist breadth now: cine-camera lens/filmback/focus fields, the full `FPostProcessSettings` member set, attenuation/falloff, IES texture asset assignment (asset-ref), light function materials; plus Sequencer integration (area 16), shot creation, render preview. |
-| Next useful slice | Widen `PropertyAllowlist` to the cine-camera + FPostProcessSettings members (no new engine work — just entries), plus the `get_actor_properties` discovery tool. |
+| Next useful slice | Widen `PropertyAllowlist` to the cine-camera + FPostProcessSettings members (no new engine work — just entries); `get_actor_properties` discovery is now shipped to surface them with current values. |
 | Proof needed | Preview before/after + undo (met for intensity/color/units and a post-process struct member via `UE5MCP.Executor.SetPropertyEnumStructAssetKinds`). |
 
 ### 16. Sequencer and cinematics
@@ -373,13 +374,14 @@ Current verification snapshot:
 
 Ranked by leverage and fit with the governed model:
 
-1. **Read-only property/component inspection** (`L0`) — `get_actor_properties`: list the allowlisted-editable properties + current values per target, so edits don't rely on trial-and-error refusals.
+1. **Read-only component inspection** (`L0`) — `get_actor_components`: list a target's components (class/name/creation-method/attach-parent/tags), so an agent can name a component to address — the read complement that makes component-by-name addressing possible.
 2. **Package-write policy on mutations** (`L6`) — surface `get_package_status` in mutation previews and refuse mutations against not-writable/not-checked-out packages (the next step after the readback).
 3. **Read-only Blueprint/material/asset inspection** (`L0`) — expands project understanding before risky mutation.
 4. **Capability registry / `list_capabilities`** (`L0`) — lets agents know exactly what is possible now and prevents hallucinated tools.
 
 Shipped since last revision:
 
+- **Read-only property discovery** (`L0`) — `get_actor_properties`: lists a target's reflected properties with current values, defaulting to exactly the `set_actor_property`-writable surface — removes the guess-and-get-refused loop. See domain 8.
 - **Allowlisted property edits** (`L3`) — `set_actor_property`: type-safe, range-checked, previewed, one-undo reflection writes gated by `PropertyAllowlist` (R12). See domain 8.
 - **Source-control/package status readback** (`L0/L6`) — `get_package_status`: read-only dirty-package set + source-control summary + per-package cached SC state. See domains 12–13.
 - **Actor labels and tags** (`L1`) — `set_actor_label`, `add_actor_tags`, `remove_actor_tags`: low-risk, previewed, idempotent, one undoable transaction. See domain 7.
@@ -396,6 +398,7 @@ Shipped since last revision:
 | PIE/SIE mutation refusal | editor-state guardrails | ready / covered by tests |
 | Over-cap spawn refusal | blast-radius limit | ready if result UX is clear |
 | Actor labels/tags cleanup | low-risk metadata breadth | ready — `set_actor_label` / `add_actor_tags` / `remove_actor_tags` shipped |
+| Inspect a light then edit it | discover the allowlisted-editable property surface + current values, then write — no trial-and-error | ready — `get_actor_properties` shipped (read-only, defaults to the writable surface) |
 | Dim/recolor a light → preview → undo | allowlisted typed property edit + refusal of non-allowlisted | ready — `set_actor_property` shipped (light Intensity/LightColor) |
 | Read logs and self-correct | refusal/error recovery loop | ready — `read_logs` shipped (read-only, capped, filtered) |
 | Package/source-control status readback | blast-radius + SC visibility before saving | ready — `get_package_status` shipped (read-only, cache-only) |

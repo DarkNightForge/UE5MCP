@@ -13,6 +13,7 @@ enum class EUE5MCPActionType : uint8
 	FindActors,
 	ReadLogs,
 	GetPackageStatus,
+	GetActorProperties,
 	SelectActors,
 	SetActorFolder,
 	SetActorLabel,
@@ -106,6 +107,45 @@ struct FUE5MCPPackageState
 	FString SourceControlState;
 };
 
+/** Bounded query parameters for the get_actor_properties read-only discovery tool.
+ *  Lists the reflected properties of the first valid target actor (or a uniquely
+ *  resolved component of the optional `component` class on it), with current values
+ *  and the flags an agent needs to know what set_actor_property will accept — so it
+ *  never has to guess a property name and learn from a refusal. The component class
+ *  reuses FUE5MCPAction::PropertyComponentClass (the `component` param). */
+struct FUE5MCPGetPropertiesQuery
+{
+	/** When true (default), list only properties the editor considers editable
+	 *  (CPF_Edit && !CPF_EditConst && the live object permits editing). */
+	bool bEditableOnly = true;
+	/** When true (default), list only properties on the PropertyAllowlist for the
+	 *  resolved class — i.e. exactly the surface set_actor_property would accept. */
+	bool bAllowlistedOnly = true;
+	/** Cap on returned properties; the executor clamps to [1, MaxPropertyResults]. */
+	int32 MaxProperties = 50;
+};
+
+/** One reflected-property row returned by get_actor_properties. `AllowedType`/range
+ *  are populated only when the property is on the allowlist; `SuggestedRange` carries
+ *  the engine's own declared ClampMin/ClampMax metadata (advisory — a hint for widening
+ *  the allowlist, never an implicit grant). */
+struct FUE5MCPPropertySummary
+{
+	FString Name;
+	FString CppType;
+	FString CurrentValue;
+	bool bEditable = false;
+	bool bDiffersFromDefault = false;
+	bool bAllowlisted = false;
+	FString AllowedType;
+	bool bHasRange = false;
+	double RangeMin = 0.0;
+	double RangeMax = 0.0;
+	bool bHasSuggestedRange = false;
+	double SuggestedMin = 0.0;
+	double SuggestedMax = 0.0;
+};
+
 /** A typed value for set_actor_property, tagged by the JSON kind the client sent.
  *  The validator checks this kind against the allowlist entry's declared type; the
  *  executor writes it through reflection only after that match holds. */
@@ -166,6 +206,7 @@ struct FUE5MCPAction
 	FUE5MCPFindActorsQuery FindQuery;
 	FUE5MCPReadLogsQuery ReadLogsQuery;
 	FUE5MCPPackageStatusQuery PackageQuery;
+	FUE5MCPGetPropertiesQuery GetPropertiesQuery;
 	FUE5MCPTransformDelta Transform;
 	FVector DuplicateOffset = FVector::ZeroVector;
 	FString SpawnClassPath;
@@ -210,6 +251,12 @@ struct FUE5MCPActionResult
 	FUE5MCPSourceControlSummary SourceControl;
 	TArray<FUE5MCPPackageState> Packages;
 	bool bPackagesTruncated = false;
+	/** Populated by get_actor_properties only: the inspected owner's class path, the
+	 *  reflected-property rows, and whether the list was capped. */
+	bool bHasProperties = false;
+	FString InspectedOwnerClass;
+	TArray<FUE5MCPPropertySummary> Properties;
+	bool bPropertiesTruncated = false;
 };
 
 struct FUE5MCPExecutionResult
@@ -283,6 +330,7 @@ struct FUE5MCPActionRequest
 	FUE5MCPFindActorsQuery FindQuery;
 	FUE5MCPReadLogsQuery ReadLogsQuery;
 	FUE5MCPPackageStatusQuery PackageQuery;
+	FUE5MCPGetPropertiesQuery GetPropertiesQuery;
 	FUE5MCPTransformDelta Transform;
 	bool bHasDuplicateOffset = false;
 	FVector DuplicateOffset = FVector::ZeroVector;

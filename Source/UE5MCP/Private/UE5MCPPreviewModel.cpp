@@ -289,6 +289,17 @@ FString FUE5MCPPreviewModel::BuildPreviewText(const FUE5MCPResolvedAction& Resol
 			Query.bDirtyOnly ? TEXT("dirty ") : TEXT("loaded "));
 	}
 
+	case EUE5MCPActionType::GetActorProperties:
+	{
+		const FUE5MCPGetPropertiesQuery& Query = Action.GetPropertiesQuery;
+		return FString::Printf(TEXT("get_actor_properties: list up to %d %s%sproperty(ies)%s of the first target%s (read-only)"),
+			Query.MaxProperties,
+			Query.bAllowlistedOnly ? TEXT("allowlisted ") : TEXT(""),
+			Query.bEditableOnly ? TEXT("editable ") : TEXT(""),
+			Action.PropertyComponentClass.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" on its '%s'"), *Action.PropertyComponentClass),
+			Action.TargetActors.Num() > 1 ? *FString::Printf(TEXT(" (of %d)"), Action.TargetActors.Num()) : TEXT(""));
+	}
+
 	case EUE5MCPActionType::FindActors:
 	{
 		const FUE5MCPFindActorsQuery& Query = Action.FindQuery;

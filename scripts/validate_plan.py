@@ -104,6 +104,17 @@ REGISTRY = {
         "requires_targets": False,
         "accepts_targets": False,
     },
+    "get_actor_properties": {
+        "risk": READ_ONLY,
+        "params": {
+            "component": str,
+            "editable_only": bool,
+            "allowlisted_only": bool,
+            "max_properties": int,
+        },
+        "requires_targets": True,
+        "accepts_targets": True,
+    },
     "select_actors": {
         "risk": LOW_RISK,
         "params": {},

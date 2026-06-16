@@ -208,6 +208,43 @@ bool FUE5MCPJsonParseSetPropertyTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPJsonParseGetPropertiesTest,
+	"UE5MCP.Json.ParsesGetActorPropertiesQuery", UE5MCPTests::KernelTestFlags)
+bool FUE5MCPJsonParseGetPropertiesTest::RunTest(const FString& Parameters)
+{
+	const FString Body = TEXT(R"json({
+		"schema_version": 1,
+		"summary": "Inspect properties",
+		"requires_approval": false,
+		"actions": [
+			{
+				"id": "g1",
+				"tool": "get_actor_properties",
+				"risk": "read_only",
+				"targets": ["PersistentLevel.Light_1"],
+				"params": { "component": "/Script/Engine.PointLightComponent", "editable_only": false, "allowlisted_only": false, "max_properties": 25 }
+			}
+		]
+	})json");
+
+	FUE5MCPPlanRequest Request;
+	TArray<FString> Errors;
+	TestTrue(TEXT("Envelope parses"), UE5MCPJson::ParsePlanRequest(Body, Request, Errors));
+	TestEqual(TEXT("No parse errors"), Errors.Num(), 0);
+	TestEqual(TEXT("one action"), Request.Actions.Num(), 1);
+	if (Request.Actions.Num() == 1)
+	{
+		const FUE5MCPActionRequest& Action = Request.Actions[0];
+		TestEqual(TEXT("component parsed"), Action.PropertyComponentClass, FString(TEXT("/Script/Engine.PointLightComponent")));
+		TestFalse(TEXT("editable_only parsed as false"), Action.GetPropertiesQuery.bEditableOnly);
+		TestFalse(TEXT("allowlisted_only parsed as false"), Action.GetPropertiesQuery.bAllowlistedOnly);
+		TestEqual(TEXT("max_properties parsed"), Action.GetPropertiesQuery.MaxProperties, 25);
+		TestEqual(TEXT("one target path carried"), Action.TargetPaths.Num(), 1);
+	}
+
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPJsonParseTransformTest,
 	"UE5MCP.Json.ParsesTransformParams", UE5MCPTests::KernelTestFlags)
 bool FUE5MCPJsonParseTransformTest::RunTest(const FString& Parameters)

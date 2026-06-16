@@ -91,6 +91,9 @@ FUE5MCPExecutionResult FUE5MCPActionExecutor::ExecuteApprovedPlan(const FUE5MCPV
 		case EUE5MCPActionType::GetPackageStatus:
 			ActionResult = ExecuteGetPackageStatus(ResolvedAction);
 			break;
+		case EUE5MCPActionType::GetActorProperties:
+			ActionResult = ExecuteGetActorProperties(ResolvedAction);
+			break;
 		case EUE5MCPActionType::SelectActors:
 			ActionResult = ExecuteSelectActors(ResolvedAction);
 			break;
@@ -1241,6 +1244,138 @@ FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteGetPackageStatus(const FUE5MCP
 			: (Result.SourceControl.bEnabled ? TEXT("enabled but unavailable") : TEXT("disabled")),
 		*Result.SourceControl.ProviderName,
 		Result.bPackagesTruncated ? TEXT(" (truncated at cap)") : TEXT(""));
+	return Result;
+}
+
+namespace
+{
+	/** Hard cap on properties get_actor_properties returns; a client cannot ask for more. */
+	constexpr int32 MaxPropertyResults = 500;
+}
+
+FUE5MCPActionResult FUE5MCPActionExecutor::ExecuteGetActorProperties(const FUE5MCPResolvedAction& ResolvedAction)
+{
+	const FUE5MCPAction& Action = ResolvedAction.Action;
+	FUE5MCPActionResult Result;
+	Result.ActionId = Action.Id;
+	Result.bHasProperties = true;
+
+	const int32 MaxProperties = FMath::Clamp(Action.GetPropertiesQuery.MaxProperties, 1, MaxPropertyResults);
+	const bool bEditableOnly = Action.GetPropertiesQuery.bEditableOnly;
+	const bool bAllowlistedOnly = Action.GetPropertiesQuery.bAllowlistedOnly;
+
+	// Reflection enumeration is per-class: every instance of a class exposes the same
+	// property set, and only current_value / differs_from_default vary per instance.
+	// So discovery inspects the FIRST valid target ("inspect this actor"); a flat list
+	// across heterogeneous targets would be noise. The message reports how many were given.
+	AActor* Actor = nullptr;
+	int32 RequestedCount = Action.TargetActors.Num();
+	for (const TWeakObjectPtr<AActor>& ActorPtr : Action.TargetActors)
+	{
+		if (AActor* Candidate = ActorPtr.Get())
+		{
+			if (IsValid(Candidate)) { Actor = Candidate; break; }
+		}
+	}
+	if (!Actor)
+	{
+		Result.RefusalCode = TEXT("no_valid_targets");
+		Result.Message = TEXT("Rejected get_actor_properties: no valid target actor in the editor world.");
+		return Result;
+	}
+
+	// Resolve the owner: the actor itself, or a UNIQUELY resolved component of the
+	// optional `component` class on it (mirrors the set_actor_property owner model).
+	UObject* Owner = Actor;
+	if (!Action.PropertyComponentClass.IsEmpty())
+	{
+		UClass* CompClass = ResolveClassByPath(Action.PropertyComponentClass);
+		if (!CompClass || !CompClass->IsChildOf(UActorComponent::StaticClass()))
+		{
+			Result.RefusalCode = TEXT("property_owner_not_found");
+			Result.Message = FString::Printf(TEXT("Rejected get_actor_properties: component class '%s' is not a resolvable component class."), *Action.PropertyComponentClass);
+			return Result;
+		}
+		TArray<UActorComponent*> Components;
+		Actor->GetComponents(CompClass, Components);
+		if (Components.Num() == 0)
+		{
+			Result.RefusalCode = TEXT("property_owner_not_found");
+			Result.Message = FString::Printf(TEXT("Rejected get_actor_properties: actor '%s' has no '%s' component."), *Actor->GetActorLabel(), *Action.PropertyComponentClass);
+			return Result;
+		}
+		if (Components.Num() > 1)
+		{
+			Result.RefusalCode = TEXT("ambiguous_component");
+			Result.Message = FString::Printf(TEXT("Rejected get_actor_properties: actor '%s' has %d '%s' components; the read tool cannot pick one."), *Actor->GetActorLabel(), Components.Num(), *Action.PropertyComponentClass);
+			return Result;
+		}
+		Owner = Components[0];
+	}
+
+	UClass* OwnerClass = Owner->GetClass();
+	Result.InspectedOwnerClass = OwnerClass->GetPathName();
+	UObject* Archetype = Owner->GetArchetype();
+	const UUE5MCPSettings* Settings = GetDefault<UUE5MCPSettings>();
+
+	int32 TotalMatched = 0;
+	for (TFieldIterator<FProperty> It(OwnerClass); It; ++It)
+	{
+		FProperty* Prop = *It;
+		const bool bEditable = Prop->HasAnyPropertyFlags(CPF_Edit) && !Prop->HasAnyPropertyFlags(CPF_EditConst) && Owner->CanEditChange(Prop);
+
+		// Allowlist match: a top-level (non-dotted) entry whose declared class the owner IS.
+		const FUE5MCPPropertyAllowEntry* AllowEntry = nullptr;
+		for (const FUE5MCPPropertyAllowEntry& Entry : Settings->PropertyAllowlist)
+		{
+			if (Entry.PropertyName != Prop->GetFName()) { continue; }
+			UClass* EntryClass = ResolveClassByPath(Entry.ClassPath);
+			if (EntryClass && Owner->IsA(EntryClass)) { AllowEntry = &Entry; break; }
+		}
+		const bool bAllowlisted = AllowEntry != nullptr;
+
+		if (bAllowlistedOnly && !bAllowlisted) { continue; }
+		if (bEditableOnly && !bEditable) { continue; }
+
+		++TotalMatched;
+		if (Result.Properties.Num() >= MaxProperties) { continue; }
+
+		FUE5MCPPropertySummary Summary;
+		Summary.Name = Prop->GetName();
+		Summary.CppType = Prop->GetCPPType();
+		Summary.CurrentValue = PropertyValueToText(Prop, Prop->ContainerPtrToValuePtr<void>(Owner));
+		Summary.bEditable = bEditable;
+		Summary.bDiffersFromDefault = Archetype ? !Prop->Identical_InContainer(Owner, Archetype) : false;
+		Summary.bAllowlisted = bAllowlisted;
+		if (AllowEntry)
+		{
+			Summary.AllowedType = AllowEntry->Type;
+			Summary.bHasRange = AllowEntry->bHasRange;
+			Summary.RangeMin = AllowEntry->Min;
+			Summary.RangeMax = AllowEntry->Max;
+		}
+#if WITH_EDITORONLY_DATA
+		if (Prop->HasMetaData(TEXT("ClampMin")) && Prop->HasMetaData(TEXT("ClampMax")))
+		{
+			Summary.bHasSuggestedRange = true;
+			Summary.SuggestedMin = Prop->GetFloatMetaData(TEXT("ClampMin"));
+			Summary.SuggestedMax = Prop->GetFloatMetaData(TEXT("ClampMax"));
+		}
+#endif
+		Result.Properties.Add(MoveTemp(Summary));
+	}
+
+	Result.bPropertiesTruncated = TotalMatched > Result.Properties.Num();
+	Result.bSuccess = true;
+	Result.Message = FString::Printf(
+		TEXT("get_actor_properties: %d of %d %s%sproperty(ies) on %s (%s)%s%s (read-only)"),
+		Result.Properties.Num(), TotalMatched,
+		bAllowlistedOnly ? TEXT("allowlisted ") : TEXT(""),
+		bEditableOnly ? TEXT("editable ") : TEXT(""),
+		*Owner->GetClass()->GetName(),
+		*Actor->GetActorLabel(),
+		RequestedCount > 1 ? *FString::Printf(TEXT(" [inspected first of %d targets]"), RequestedCount) : TEXT(""),
+		Result.bPropertiesTruncated ? TEXT(" (truncated at cap)") : TEXT(""));
 	return Result;
 }
 

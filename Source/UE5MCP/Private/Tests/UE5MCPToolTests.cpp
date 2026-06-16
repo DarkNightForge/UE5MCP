@@ -2,8 +2,11 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "Components/PointLightComponent.h"
+#include "Components/SceneComponent.h"
 #include "CoreMinimal.h"
 #include "Editor.h"
+#include "Engine/PointLight.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Misc/AutomationTest.h"
@@ -322,6 +325,101 @@ bool FUE5MCPSelectActorsPlayModeTest::RunTest(const FString& Parameters)
 			UE5MCPTests::WrapPlanForTest(Resolved));
 		TestFalse(TEXT("Selection mutation refused during play mode"), Result.bSuccess);
 		TestTrue(TEXT("Refused upfront (nothing executed)"), Result.ActionResults.IsEmpty());
+	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUE5MCPGetActorPropertiesTest,
+	"UE5MCP.Tools.GetActorPropertiesListsAllowlistedWithValues", UE5MCPTests::KernelTestFlags)
+bool FUE5MCPGetActorPropertiesTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+	if (!TestNotNull(TEXT("CreateNewMap returned a world"), World))
+	{
+		return false;
+	}
+
+	APointLight* Light = World->SpawnActor<APointLight>();
+	if (!TestNotNull(TEXT("Spawned a point light"), Light))
+	{
+		return false;
+	}
+
+	// --- Allowlisted, editable discovery on the point light component ---
+	FUE5MCPResolvedAction Resolved;
+	Resolved.Action.Id = TEXT("test-get-properties");
+	Resolved.Action.Type = EUE5MCPActionType::GetActorProperties;
+	Resolved.Action.Risk = EUE5MCPRiskLevel::ReadOnly;
+	Resolved.Action.PropertyComponentClass = TEXT("/Script/Engine.PointLightComponent");
+	Resolved.Action.GetPropertiesQuery.bAllowlistedOnly = true;
+	Resolved.Action.GetPropertiesQuery.bEditableOnly = true;
+	Resolved.Action.GetPropertiesQuery.MaxProperties = 50;
+	Resolved.Action.TargetActors.Add(Light);
+
+	const FUE5MCPExecutionResult Result =
+		FUE5MCPActionExecutor::ExecuteApprovedPlan(UE5MCPTests::WrapPlanForTest(Resolved));
+	TestTrue(TEXT("Read-only get_actor_properties executed"), Result.bSuccess);
+	TestEqual(TEXT("One action result"), Result.ActionResults.Num(), 1);
+	if (Result.ActionResults.Num() == 1)
+	{
+		const FUE5MCPActionResult& Action = Result.ActionResults[0];
+		TestTrue(TEXT("Result carries properties"), Action.bHasProperties);
+		TestTrue(TEXT("Inspected owner is the point light component"),
+			Action.InspectedOwnerClass.Contains(TEXT("PointLightComponent")));
+
+		const FUE5MCPPropertySummary* Intensity = Action.Properties.FindByPredicate(
+			[](const FUE5MCPPropertySummary& P) { return P.Name == TEXT("Intensity"); });
+		const FUE5MCPPropertySummary* LightColor = Action.Properties.FindByPredicate(
+			[](const FUE5MCPPropertySummary& P) { return P.Name == TEXT("LightColor"); });
+
+		if (TestNotNull(TEXT("Intensity is listed (allowlisted)"), Intensity))
+		{
+			TestTrue(TEXT("Intensity is flagged allowlisted"), Intensity->bAllowlisted);
+			TestTrue(TEXT("Intensity is flagged editable"), Intensity->bEditable);
+			TestEqual(TEXT("Intensity allowed_type is float"), Intensity->AllowedType, FString(TEXT("float")));
+			TestTrue(TEXT("Intensity carries the configured range"), Intensity->bHasRange);
+			TestTrue(TEXT("Intensity range max is the configured 1e6"), FMath::IsNearlyEqual(Intensity->RangeMax, 1000000.0, 0.01));
+			TestFalse(TEXT("Intensity current_value is non-empty"), Intensity->CurrentValue.IsEmpty());
+		}
+		TestNotNull(TEXT("LightColor is listed (allowlisted)"), LightColor);
+
+		// allowlisted_only must not leak a non-allowlisted property like AttenuationRadius.
+		const bool bLeaked = Action.Properties.ContainsByPredicate(
+			[](const FUE5MCPPropertySummary& P) { return P.Name == TEXT("AttenuationRadius"); });
+		TestFalse(TEXT("Non-allowlisted property not leaked under allowlisted_only"), bLeaked);
+	}
+
+	// --- Ambiguous component: two of the same component class refuses, not guesses ---
+	AActor* Multi = World->SpawnActor<AActor>();
+	if (TestNotNull(TEXT("Spawned a bare actor"), Multi))
+	{
+		USceneComponent* Root = NewObject<USceneComponent>(Multi, TEXT("Root"), RF_Transactional);
+		Multi->SetRootComponent(Root);
+		Root->RegisterComponent();
+		Multi->AddInstanceComponent(Root);
+		for (int32 Index = 0; Index < 2; ++Index)
+		{
+			UPointLightComponent* Comp = NewObject<UPointLightComponent>(Multi, NAME_None, RF_Transactional);
+			Comp->RegisterComponent();
+			Multi->AddInstanceComponent(Comp);
+		}
+
+		FUE5MCPResolvedAction Ambiguous;
+		Ambiguous.Action.Id = TEXT("test-get-properties-ambiguous");
+		Ambiguous.Action.Type = EUE5MCPActionType::GetActorProperties;
+		Ambiguous.Action.Risk = EUE5MCPRiskLevel::ReadOnly;
+		Ambiguous.Action.PropertyComponentClass = TEXT("/Script/Engine.PointLightComponent");
+		Ambiguous.Action.TargetActors.Add(Multi);
+
+		const FUE5MCPExecutionResult AmbiguousResult =
+			FUE5MCPActionExecutor::ExecuteApprovedPlan(UE5MCPTests::WrapPlanForTest(Ambiguous));
+		TestFalse(TEXT("Ambiguous component inspection refused"), AmbiguousResult.bSuccess);
+		if (AmbiguousResult.ActionResults.Num() == 1)
+		{
+			TestEqual(TEXT("Refusal code is ambiguous_component"),
+				AmbiguousResult.ActionResults[0].RefusalCode, FString(TEXT("ambiguous_component")));
+		}
 	}
 
 	return true;

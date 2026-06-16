@@ -57,6 +57,9 @@ class ExampleFileTests(unittest.TestCase):
     def test_set_actor_property_is_valid(self):
         self.assertEqual(validate_plan(load_example("set-actor-property.json")), [])
 
+    def test_get_actor_properties_is_valid(self):
+        self.assertEqual(validate_plan(load_example("get-actor-properties.json")), [])
+
     def test_invalid_examples_fail_for_documented_rules(self):
         problems = validate_plan(load_example("invalid-empty-targets.json"))
         self.assertIn("R6", rules(problems))
@@ -502,6 +505,35 @@ class SpawnTests(unittest.TestCase):
         # PointLight is allowlisted as a class but cannot carry a static_mesh.
         params = self.base_params(class_path="/Script/Engine.PointLight")
         self.assertIn("R11", rules(validate_plan(self.spawn_plan(params))))
+
+
+class GetActorPropertiesTests(unittest.TestCase):
+    def plan(self):
+        return load_example("get-actor-properties.json")
+
+    def test_valid(self):
+        self.assertEqual(validate_plan(self.plan()), [])
+
+    def test_r6_requires_targets(self):
+        # get_actor_properties is read-only but REQUIRES targets (the first such tool).
+        plan = self.plan()
+        plan["actions"][0]["targets"] = []
+        self.assertIn("R6", rules(validate_plan(plan)))
+
+    def test_r9_unknown_param(self):
+        plan = self.plan()
+        plan["actions"][0]["params"]["not_a_param"] = True
+        self.assertIn("R9", rules(validate_plan(plan)))
+
+    def test_r9_max_properties_must_be_int(self):
+        plan = self.plan()
+        plan["actions"][0]["params"]["max_properties"] = "lots"
+        self.assertIn("R9", rules(validate_plan(plan)))
+
+    def test_accepts_targets_without_component(self):
+        plan = self.plan()
+        del plan["actions"][0]["params"]["component"]
+        self.assertEqual(validate_plan(plan), [])
 
 
 if __name__ == "__main__":

@@ -29,7 +29,7 @@ We do **not** try to out-breadth the exec-everything approach. We win where brea
 
 ## Status — honest accounting
 
-- **Verified:** builds clean as a drop-in **project plugin** and passes **56/56** headless automation tests on **Unreal Engine 5.7.4** (Linux source build). Live runs with an external Claude Code client building and fully undoing an organized scene through the approval boundary.
+- **Verified:** builds clean as a drop-in **project plugin** and passes **67/67** headless automation tests on **Unreal Engine 5.7.4** (Linux source build). Live runs with an external Claude Code client building and fully undoing an organized scene through the approval boundary.
 - **Not yet verified:** Epic Games Launcher **binary** builds and **Windows**. Treat those as untested until confirmed.
 - **Beta, v0.1.** 8 typed actions today (see below). Breadth is the roadmap, not the claim.
 
@@ -67,9 +67,9 @@ Full walkthrough: [`docs/demo-live.md`](docs/demo-live.md). Architecture & safet
 
 ## The tools
 
-Fifteen MCP tools (`mcp__ue5mcp__*`), in three risk tiers:
+Sixteen MCP tools (`mcp__ue5mcp__*`), in three risk tiers:
 
-**Read-only** — `get_selection`, `find_actors`, `read_logs`, `get_package_status`, `preview_actions`
+**Read-only** — `get_selection`, `find_actors`, `read_logs`, `get_package_status`, `get_actor_properties`, `preview_actions`
 **Low mutation** — `select_actors`, `set_actor_folder`, `set_actor_label`, `add_actor_tags`, `remove_actor_tags`, `set_actor_property` (allowlisted), `set_actor_transform`, `duplicate_actor_with_offset`, `spawn_actor_from_class` (class + mesh allowlisted)
 **Destructive** — `delete_actor`
 

@@ -53,6 +53,7 @@ action MUST be one of these names. Param keys are exactly those parsed in
 | `find_actors` | `read_only` | rejected | `class_path?: string`, `label_contains?: string`, `tag?: string`, `folder_path?: string`, `selected_only?: bool`, `max_results?: int` | Searches loaded editor-world actors; deterministic, capped results; does not see unloaded World Partition actors |
 | `read_logs` | `read_only` | rejected | `max_lines?: int`, `contains?: string` | Returns recent lines from the plugin's structured `LogUE5MCP` buffer (tool calls, refusals, errors); oldest→newest, capped (default 100, clamped to `[1, FUE5MCPLog::MaxBufferedLines]` = 512), optional case-insensitive substring filter. Mutates nothing — for self-correction after a refusal/error |
 | `get_package_status` | `read_only` | rejected | `max_packages?: int`, `dirty_only?: bool` | Reports the packages a save/mutation would touch (the dirty set; default 100, clamped to `[1, 500]`) plus a source-control summary (provider, enabled/available) and per-package cached SC state. `dirty_only` false also includes other loaded on-disk packages (capped). Per-package SC state is read from the provider CACHE only — never starts a source-control network call |
+| `get_actor_properties` | `read_only` | **required** | `component?: string`, `editable_only?: bool`, `allowlisted_only?: bool`, `max_properties?: int` | Lists the reflected properties of the first target actor (or a uniquely-resolved component of `component`'s class on it) with current values: each row carries `name`, `cpp_type`, `current_value`, `editable`, `differs_from_default`, `allowlisted`, the allowlisted `allowed_type`/range, and the engine's advisory `ClampMin/ClampMax` suggested range. Defaults (`allowlisted_only`+`editable_only` true) return exactly the `set_actor_property`-writable surface — discovery without trial-and-error. Capped (default 50, clamped `[1, 500]`). The first read-only tool that *requires* targets; refuses `ambiguous_component` / `property_owner_not_found` / `no_valid_targets` |
 | `select_actors` | `low_risk` | required | — | Sets the editor selection to exactly the targets (undoable selection-state mutation) |
 | `set_actor_folder` | `low_risk` | required | `folder_path: string` (required, non-empty) | Moves targets into a named World Outliner folder |
 | `set_actor_label` | `low_risk` | required | `label: string` (required, non-empty) | Sets the editor display label of each target; labels are display-only and need not be unique; an empty/whitespace label is a refused no-op |
@@ -96,6 +97,7 @@ do not:
 | `find_actors` | `read_only` | registry `find_actors` | 1:1 |
 | `read_logs` | `read_only` | registry `read_logs` | 1:1 |
 | `get_package_status` | `read_only` | registry `get_package_status` | 1:1 |
+| `get_actor_properties` | `read_only` | registry `get_actor_properties` | 1:1 |
 | `preview_actions` | `read_only` | **no registry tool** | MCP-server-only; see below |
 | `select_actors` | `low_risk` | registry `select_actors` | takes `actor_paths` → plan `targets` |
 | `set_actor_folder` | `low_risk` | registry `set_actor_folder` | |
@@ -168,7 +170,7 @@ violated.
 | R3 | Every `tool` exists in the registry |
 | R4 | Every action's `risk` equals the registry risk for its tool |
 | R5 | If any action mutates (risk ≠ `read_only`), `requires_approval` must be `true` |
-| R6 | A requires-targets tool (`select_actors`, `set_actor_folder`, `set_actor_label`, `add_actor_tags`, `remove_actor_tags`, `set_actor_transform`, `duplicate_actor_with_offset`, `delete_actor`) must have a non-empty `targets` list; a requires-targets tool also includes `set_actor_property`; a no-target tool (`get_selection_context`, `find_actors`, `read_logs`, `get_package_status`, `spawn_actor_from_class`) must NOT be given targets; **(live)** every target path must resolve to an actor in the running editor world |
+| R6 | A requires-targets tool (`get_actor_properties`, `select_actors`, `set_actor_folder`, `set_actor_label`, `add_actor_tags`, `remove_actor_tags`, `set_actor_property`, `set_actor_transform`, `duplicate_actor_with_offset`, `delete_actor`) must have a non-empty `targets` list — note `get_actor_properties` is read-only yet requires targets; a no-target tool (`get_selection_context`, `find_actors`, `read_logs`, `get_package_status`, `spawn_actor_from_class`) must NOT be given targets; **(live)** every target path must resolve to an actor in the running editor world |
 | R7 | If any action is `destructive`, `requires_second_confirmation` must be `true` |
 | R8 | Mutation plans must carry a `context_fingerprint` with a non-empty `scene` and a `selected_object_paths` list |
 | R9 | Params must be allowlisted for the tool, with required params present and correctly typed: `folder_path` a non-empty string; `set_actor_label` needs a non-empty `label`; `add_actor_tags`/`remove_actor_tags` need a non-empty `tags` array of non-empty strings; `set_actor_property` needs a non-empty `property` and a well-formed `value`; transform/offset/instance vectors arrays of 3 numbers; `set_actor_transform` needs ≥1 of `location`/`rotation`/`scale`; `duplicate_actor_with_offset` needs `offset`; `spawn_actor_from_class` needs `class_path` plus a non-empty `transforms` list (each instance with a `location`) |
@@ -236,7 +238,11 @@ The exact shape serialized by `UE5MCPJson::SerializeExecutionResult`:
   of the matching structured log-line strings, oldest→newest). A
   `get_package_status` result additionally carries `source_control`
   (`{enabled, available, provider}`), `packages` (an array of
-  `{name, filename, dirty, source_control_state}`), and `packages_truncated`.
+  `{name, filename, dirty, source_control_state}`), and `packages_truncated`. A
+  `get_actor_properties` result additionally carries `inspected_owner_class`,
+  `properties` (an array of `{name, cpp_type, current_value, editable,
+  differs_from_default, allowlisted, allowed_type?, range_min?/range_max?,
+  suggested_min?/suggested_max?}`), and `properties_truncated`.
 - `log` is the append-only human-readable log line list, mirroring `LogUE5MCP`.
 
 Every refusal still produces a full result — *what was prevented* is part of the

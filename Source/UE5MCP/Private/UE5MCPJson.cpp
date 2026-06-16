@@ -428,6 +428,18 @@ bool UE5MCPJson::ParsePlanRequest(const FString& Body, FUE5MCPPlanRequest& OutRe
 				{
 					ActionRequest.PackageQuery.bDirtyOnly = BoolValue;
 				}
+				else if (Key == TEXT("editable_only") && Value->TryGetBool(BoolValue))
+				{
+					ActionRequest.GetPropertiesQuery.bEditableOnly = BoolValue;
+				}
+				else if (Key == TEXT("allowlisted_only") && Value->TryGetBool(BoolValue))
+				{
+					ActionRequest.GetPropertiesQuery.bAllowlistedOnly = BoolValue;
+				}
+				else if (Key == TEXT("max_properties") && Value->TryGetNumber(NumberValue))
+				{
+					ActionRequest.GetPropertiesQuery.MaxProperties = static_cast<int32>(NumberValue);
+				}
 			}
 
 			// find_actors uses folder_path as its folder filter as well.
@@ -528,6 +540,38 @@ FString UE5MCPJson::SerializeExecutionResult(const FUE5MCPExecutionResult& Resul
 			}
 			ResultObject->SetArrayField(TEXT("packages"), PackageValues);
 			ResultObject->SetBoolField(TEXT("packages_truncated"), ActionResult.bPackagesTruncated);
+		}
+		if (ActionResult.bHasProperties)
+		{
+			ResultObject->SetStringField(TEXT("inspected_owner_class"), ActionResult.InspectedOwnerClass);
+			TArray<TSharedPtr<FJsonValue>> PropertyValues;
+			for (const FUE5MCPPropertySummary& Property : ActionResult.Properties)
+			{
+				TSharedRef<FJsonObject> PropObject = MakeShared<FJsonObject>();
+				PropObject->SetStringField(TEXT("name"), Property.Name);
+				PropObject->SetStringField(TEXT("cpp_type"), Property.CppType);
+				PropObject->SetStringField(TEXT("current_value"), Property.CurrentValue);
+				PropObject->SetBoolField(TEXT("editable"), Property.bEditable);
+				PropObject->SetBoolField(TEXT("differs_from_default"), Property.bDiffersFromDefault);
+				PropObject->SetBoolField(TEXT("allowlisted"), Property.bAllowlisted);
+				if (!Property.AllowedType.IsEmpty())
+				{
+					PropObject->SetStringField(TEXT("allowed_type"), Property.AllowedType);
+				}
+				if (Property.bHasRange)
+				{
+					PropObject->SetNumberField(TEXT("range_min"), Property.RangeMin);
+					PropObject->SetNumberField(TEXT("range_max"), Property.RangeMax);
+				}
+				if (Property.bHasSuggestedRange)
+				{
+					PropObject->SetNumberField(TEXT("suggested_min"), Property.SuggestedMin);
+					PropObject->SetNumberField(TEXT("suggested_max"), Property.SuggestedMax);
+				}
+				PropertyValues.Add(MakeShared<FJsonValueObject>(PropObject));
+			}
+			ResultObject->SetArrayField(TEXT("properties"), PropertyValues);
+			ResultObject->SetBoolField(TEXT("properties_truncated"), ActionResult.bPropertiesTruncated);
 		}
 		ActionResults.Add(MakeShared<FJsonValueObject>(ResultObject));
 	}

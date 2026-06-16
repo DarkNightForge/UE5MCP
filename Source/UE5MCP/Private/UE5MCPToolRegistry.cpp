@@ -13,6 +13,8 @@ const TArray<FUE5MCPToolDescriptor>& FUE5MCPToolRegistry::GetTools()
 			{ TEXT("max_lines"), TEXT("contains") }, /*bRequiresTargets=*/false, /*bAcceptsTargets=*/false },
 		{ TEXT("get_package_status"), EUE5MCPActionType::GetPackageStatus, EUE5MCPRiskLevel::ReadOnly,
 			{ TEXT("max_packages"), TEXT("dirty_only") }, /*bRequiresTargets=*/false, /*bAcceptsTargets=*/false },
+		{ TEXT("get_actor_properties"), EUE5MCPActionType::GetActorProperties, EUE5MCPRiskLevel::ReadOnly,
+			{ TEXT("component"), TEXT("editable_only"), TEXT("allowlisted_only"), TEXT("max_properties") }, /*bRequiresTargets=*/true, /*bAcceptsTargets=*/true },
 		{ TEXT("select_actors"), EUE5MCPActionType::SelectActors, EUE5MCPRiskLevel::LowMutation,
 			{}, /*bRequiresTargets=*/true },
 		{ TEXT("set_actor_folder"), EUE5MCPActionType::SetActorFolder, EUE5MCPRiskLevel::LowMutation,

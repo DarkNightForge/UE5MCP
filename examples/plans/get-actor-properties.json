@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "summary": "Inspect the allowlisted, editable properties of a selected light before editing it",
+  "requires_approval": false,
+  "requires_second_confirmation": false,
+  "actions": [
+    {
+      "id": "get-actor-properties-01",
+      "tool": "get_actor_properties",
+      "risk": "read_only",
+      "targets": ["PersistentLevel.PointLight_1"],
+      "params": {
+        "component": "/Script/Engine.PointLightComponent",
+        "editable_only": true,
+        "allowlisted_only": true,
+        "max_properties": 50
+      }
+    }
+  ]
+}
